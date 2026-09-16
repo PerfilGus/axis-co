@@ -1,0 +1,18 @@
+{
+  "name": "axis-tracking",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Painel interno de acompanhamento de entregas dos Correios. Frontend estático + funções serverless na Vercel + Postgres.",
+  "scripts": {
+    "dev": "vercel dev",
+    "embed-assets": "powershell -ExecutionPolicy Bypass -File ./tools/embed-assets.ps1"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

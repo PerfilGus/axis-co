@@ -1,0 +1,16 @@
+node_modules
+.next
+out
+build
+.DS_Store
+*.pem
+npm-debug.log*
+.env*
+!.env.example
+next-env.d.ts
+.vercel
+tsconfig.tsbuildinfo
+# referencia/axis-tracking é o projeto de origem da aba Rastreio, versionado
+# junto com o INVENTARIO.md da migração. Não instale dependências lá dentro.
+referencia/**/node_modules
+referencia/**/.vercel

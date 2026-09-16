@@ -1,0 +1,212 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------
+   Axis — design tokens
+   Fonte única: Space Grotesk. Tema escuro é o padrão.
+   --------------------------------------------------------------- */
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root,
+[data-theme="dark"] {
+  /* base */
+  --bg: #121212;
+  --fg: #eaeaea;
+  --muted-fg: #a9a9a7;
+
+  /* superfícies derivadas do fundo */
+  --surface-1: #191919; /* card */
+  --surface-2: #202020; /* card elevado, pílula escura */
+  --surface-3: #282828; /* hover, chip */
+  --surface-input: #1c1c1c;
+  --border: #2b2b2b;
+  --border-strong: #3a3a3a;
+  --overlay: rgb(0 0 0 / 0.68);
+
+  /* ---------------------------------------------------------------
+     Paleta de rastreio — valores exatos do axis-tracking, não
+     reinterpretados. `base` serve borda, fundo, ponto e ícone;
+     `text` é o rótulo. Ver INVENTARIO.md §2.
+     --------------------------------------------------------------- */
+  --rt-aguardando_postagem-base: #6e6e7a;  --rt-aguardando_postagem-text: #adadb8;
+  --rt-postado-base: #8a8a94;              --rt-postado-text: #c4c4cd;
+  --rt-em_transferencia-base: #4a90f2;     --rt-em_transferencia-text: #8ab8ff;
+  --rt-saiu_para_entrega-base: #f2994a;    --rt-saiu_para_entrega-text: #ffbf80;
+  --rt-entregue-base: #3fb968;             --rt-entregue-text: #7ee0a0;
+  --rt-aguardando_retirada-base: #9b7bf0;  --rt-aguardando_retirada-text: #c3aefc;
+  --rt-falha-base: #e5484d;                --rt-falha-text: #ff9d9f;
+
+  /* status do pedido — mesmas matizes, tons suaves. Nunca usam o destaque. */
+  --st-cinza-fg: #9c9c9a;        --st-cinza-bg: #9c9c9a1f;
+  --st-azul-fg: #7d9dd1;         --st-azul-bg: #7d9dd11f;
+  --st-laranja-fg: #d9915c;      --st-laranja-bg: #d9915c1f;
+  --st-verde-fg: #77b184;        --st-verde-bg: #77b1841f;
+  --st-roxo-fg: #a68bd0;         --st-roxo-bg: #a68bd01f;
+  --st-vermelho-fg: #cd7676;     --st-vermelho-bg: #cd76761f;
+  --st-esmeralda-fg: #5fb08c;    --st-esmeralda-bg: #5fb08c1f;
+  --st-turquesa-fg: #68ab9f;     --st-turquesa-bg: #68ab9f1f;
+  --st-bronze-fg: #c49a70;       --st-bronze-bg: #c49a701f;
+  --st-ardosia-fg: #8d95a5;      --st-ardosia-bg: #8d95a51f;
+  --st-rosa-fg: #c98ba4;         --st-rosa-bg: #c98ba41f;
+  --st-carmim-fg: #bd6060;       --st-carmim-bg: #bd60601f;
+}
+
+[data-theme="light"] {
+  --bg: #eaeaea;
+  --fg: #121212;
+  --muted-fg: #6b6b69;
+
+  --surface-1: #f4f4f2;
+  --surface-2: #fbfbfa;
+  --surface-3: #e2e2df;
+  --surface-input: #ffffff;
+  --border: #d5d5d1;
+  --border-strong: #c0c0bb;
+  --overlay: rgb(18 18 18 / 0.42);
+
+  /* O axis-tracking é só escuro. Mesma matiz, escurecida para o fundo claro. */
+  --rt-aguardando_postagem-base: #6e6e7a;  --rt-aguardando_postagem-text: #55555f;
+  --rt-postado-base: #7a7a84;              --rt-postado-text: #5c5c66;
+  --rt-em_transferencia-base: #2f6fd0;     --rt-em_transferencia-text: #2a5ea8;
+  --rt-saiu_para_entrega-base: #d97b28;    --rt-saiu_para_entrega-text: #a85c18;
+  --rt-entregue-base: #2f9a52;             --rt-entregue-text: #24793f;
+  --rt-aguardando_retirada-base: #7a55d6;  --rt-aguardando_retirada-text: #5f3fb0;
+  --rt-falha-base: #cf3238;                --rt-falha-text: #a3272c;
+
+  --st-cinza-fg: #6e6e6c;        --st-cinza-bg: #6e6e6c1a;
+  --st-azul-fg: #4b6fa8;         --st-azul-bg: #4b6fa81a;
+  --st-laranja-fg: #b3682f;      --st-laranja-bg: #b3682f1a;
+  --st-verde-fg: #3f8452;        --st-verde-bg: #3f84521a;
+  --st-roxo-fg: #7355a8;         --st-roxo-bg: #7355a81a;
+  --st-vermelho-fg: #a84b4b;     --st-vermelho-bg: #a84b4b1a;
+  --st-esmeralda-fg: #2e8060;    --st-esmeralda-bg: #2e80601a;
+  --st-turquesa-fg: #327a6d;     --st-turquesa-bg: #327a6d1a;
+  --st-bronze-fg: #946a3d;       --st-bronze-bg: #946a3d1a;
+  --st-ardosia-fg: #5b6474;      --st-ardosia-bg: #5b64741a;
+  --st-rosa-fg: #a05674;         --st-rosa-bg: #a056741a;
+  --st-carmim-fg: #973939;       --st-carmim-bg: #9739391a;
+}
+
+/* ---------------------------------------------------------------
+   Paleta de destaque (8 opções). Amarelo é o padrão.
+   O texto sobre o destaque é sempre escuro.
+   --------------------------------------------------------------- */
+:root,
+[data-accent="amarelo"]   { --accent: #ffbe00; --accent-soft: #ffbe0024; }
+[data-accent="laranja"]   { --accent: #ff8a3d; --accent-soft: #ff8a3d24; }
+[data-accent="coral"]     { --accent: #ff7a66; --accent-soft: #ff7a6624; }
+[data-accent="rosa"]      { --accent: #ff8fb1; --accent-soft: #ff8fb124; }
+[data-accent="roxo"]      { --accent: #b08cff; --accent-soft: #b08cff24; }
+[data-accent="azul"]      { --accent: #6fa8ff; --accent-soft: #6fa8ff24; }
+[data-accent="turquesa"]  { --accent: #4fd6c8; --accent-soft: #4fd6c824; }
+[data-accent="verde"]     { --accent: #6ee787; --accent-soft: #6ee78724; }
+
+:root { --accent-fg: #121212; }
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-fg: var(--fg);
+  --color-muted-fg: var(--muted-fg);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-input: var(--surface-input);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+
+  --font-sans: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+
+  /* hierarquia de raio: pílulas > cards > inputs */
+  --radius-card: 24px;
+  --radius-card-sm: 18px;
+  --radius-input: 14px;
+  --radius-pill: 9999px;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    color-scheme: dark;
+  }
+  [data-theme="light"] {
+    color-scheme: light;
+  }
+  body {
+    background-color: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "ss01", "ss02";
+  }
+  ::selection {
+    background-color: var(--accent);
+    color: var(--accent-fg);
+  }
+  /* foco visível e coerente com o destaque */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /* números financeiros e tabulares */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+  .ring-dashed-accent {
+    background:
+      linear-gradient(var(--bg), var(--bg)) padding-box,
+      repeating-conic-gradient(
+          from 0deg,
+          var(--accent) 0deg 10deg,
+          transparent 10deg 18deg
+        )
+        border-box;
+    border: 2px solid transparent;
+  }
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* movimento apenas em resposta a ações */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes axis-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes axis-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes axis-slide-right {
+  from { transform: translateX(100%); }
+  to { transform: none; }
+}
+@keyframes axis-slide-bottom {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+@keyframes axis-premio {
+  0% { transform: scale(0.92); opacity: 0; }
+  60% { transform: scale(1.03); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}

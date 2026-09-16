@@ -15,9 +15,9 @@ import { CICLO_PEDIDO, estiloDoTom, STATUS_AJUSTE, STATUS_PEDIDO } from "@/lib/s
 import { ROTULO_FORMA } from "@/lib/taxas";
 import { useSessao } from "@/lib/providers/sessao";
 import { usePedidos } from "@/lib/providers/pedidos";
-import { nomeColaborador } from "@/lib/mock/equipe";
-import { CRIATIVO_POR_ID, LINHA_POR_ID } from "@/lib/mock/marketing";
-import { BANCO_POR_ID } from "@/lib/mock/financeiro";
+import { useEquipe } from "@/lib/providers/equipe";
+import { useCadastros } from "@/lib/providers/cadastros";
+import { codigoCompleto } from "@/lib/mock/marketing";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
 import {
@@ -107,6 +107,8 @@ export function GavetaPedido({
   const { podeEditarPedido, podeExcluirPedido, podeAprovarAjuste, usuario } =
     useSessao();
   const { decidirAjuste, excluir } = usePedidos();
+  const { nomeDe: nomeColaborador } = useEquipe();
+  const { criativos, linhas, bancos } = useCadastros();
 
   if (!pedido) return null;
 
@@ -120,13 +122,9 @@ export function GavetaPedido({
       : CICLO_PEDIDO.length - 2
     : noCiclo;
 
-  const criativo = pedido.criativoId ? CRIATIVO_POR_ID.get(pedido.criativoId) : null;
-  const linha = pedido.linhaWhatsappId
-    ? LINHA_POR_ID.get(pedido.linhaWhatsappId)
-    : null;
-  const banco = pedido.cobranca.bancoId
-    ? BANCO_POR_ID.get(pedido.cobranca.bancoId)
-    : null;
+  const criativo = criativos.find((c) => c.id === pedido.criativoId) ?? null;
+  const linha = linhas.find((l) => l.id === pedido.linhaWhatsappId) ?? null;
+  const banco = bancos.find((b) => b.id === pedido.cobranca.bancoId) ?? null;
   const temAjustePendente = pedido.ajustes.some((a) => a.status === "pendente");
   const endereco = pedido.cliente.endereco;
   const total = pedido.valorTotal + pedido.frete;
@@ -236,7 +234,10 @@ export function GavetaPedido({
                 </div>
                 <div className="rounded-[var(--radius-card-sm)] border border-border bg-surface-2 px-4 py-2">
                   <Linha rotulo="Vendedor" valor={nomeColaborador(pedido.vendedorId)} />
-                  <Linha rotulo="Criativo" valor={criativo?.nome ?? "—"} />
+                  <Linha
+                    rotulo="Criativo"
+                    valor={criativo ? `${codigoCompleto(criativo)} · ${criativo.nome}` : "Não identificado"}
+                  />
                   <Linha rotulo="Linha de WhatsApp" valor={linha?.nome ?? "—"} />
                   {pedido.agendadoPara && (
                     <Linha

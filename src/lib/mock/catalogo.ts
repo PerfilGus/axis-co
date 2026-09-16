@@ -8,6 +8,7 @@ export const PRODUTOS: Produto[] = [
     sabor: "Limão",
     gramas: 150,
     custoUnitario: 2790,
+    fotoUrl: null,
     ativo: true,
     criadoEm: iso(maisDias(HOJE, -420)),
   },
@@ -53,17 +54,21 @@ export const PRODUTO_POR_ID = new Map(PRODUTOS.map((p) => [p.id, p]));
 export const KIT_POR_ID = new Map(KITS.map((k) => [k.id, k]));
 
 /** Quantos potes um kit carrega. Base do custo de inadimplência. */
-export function potesDoKit(kitId: string): number {
-  const kit = KIT_POR_ID.get(kitId);
+export function potesDoKit(kitId: string, kits: Kit[] = KITS): number {
+  const kit = kits.find((k) => k.id === kitId);
   if (!kit) return 0;
   return kit.itens.reduce((soma, i) => soma + i.quantidade, 0);
 }
 
-export function custoPotesDoKit(kitId: string): number {
-  const kit = KIT_POR_ID.get(kitId);
+export function custoPotesDoKit(
+  kitId: string,
+  kits: Kit[] = KITS,
+  produtos: Produto[] = PRODUTOS,
+): number {
+  const kit = kits.find((k) => k.id === kitId);
   if (!kit) return 0;
   return kit.itens.reduce((soma, i) => {
-    const produto = PRODUTO_POR_ID.get(i.produtoId);
+    const produto = produtos.find((p) => p.id === i.produtoId);
     return soma + (produto ? produto.custoUnitario * i.quantidade : 0);
   }, 0);
 }

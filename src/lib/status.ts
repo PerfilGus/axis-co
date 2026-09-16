@@ -1,13 +1,8 @@
 import type { StatusPedido } from "@/lib/types";
 import type { StatusRastreio } from "@/lib/types/rastreio";
 import type { NomeIcone } from "@/components/icone";
-import type {
-  AliquotaMensal,
-  Despesa,
-  Divida,
-  FaturaFornecedor,
-} from "@/lib/types/financeiro";
-import type { PagamentoColaborador } from "@/lib/types/equipe";
+import type { CategoriaDespesa } from "@/lib/types/financeiro";
+import type { BonusNivel, PagamentoColaborador } from "@/lib/types/equipe";
 
 /**
  * Tons de status. São fixos e vêm do axis-tracking: o destaque escolhido pelo
@@ -210,26 +205,18 @@ export function corComOpacidade(cor: string, alfa: number): string {
   return `color-mix(in srgb, ${cor} ${Math.round(alfa * 100)}%, transparent)`;
 }
 
-export const STATUS_FATURA: Record<
-  FaturaFornecedor["status"],
-  { rotulo: string; tom: TomStatus }
-> = {
-  aberta: { rotulo: "Aberta", tom: "ardosia" },
-  parcial: { rotulo: "Parcial", tom: "bronze" },
-  quitada: { rotulo: "Quitada", tom: "esmeralda" },
-  vencida: { rotulo: "Vencida", tom: "carmim" },
-};
-
+/** Alíquota do Simples: lançada para o mês, ou herdada do anterior. */
 export const SITUACAO_ALIQUOTA: Record<
-  AliquotaMensal["situacao"],
+  "estimada" | "confirmada",
   { rotulo: string; tom: TomStatus }
 > = {
   estimada: { rotulo: "Estimada", tom: "bronze" },
   confirmada: { rotulo: "Confirmada", tom: "esmeralda" },
 };
 
+/** Situação de uma dívida, derivada das parcelas. */
 export const STATUS_DIVIDA: Record<
-  Divida["status"],
+  "em_dia" | "atrasada" | "quitada",
   { rotulo: string; tom: TomStatus }
 > = {
   em_dia: { rotulo: "Em dia", tom: "verde" },
@@ -237,12 +224,29 @@ export const STATUS_DIVIDA: Record<
   quitada: { rotulo: "Quitada", tom: "esmeralda" },
 };
 
+/** Como o custo previsto de um pedido enviado foi montado. */
+export const SITUACAO_CUSTO_FORNECEDOR: Record<
+  "em_transito" | "completo" | "so_frete",
+  { rotulo: string; tom: TomStatus }
+> = {
+  em_transito: { rotulo: "Em trânsito", tom: "azul" },
+  completo: { rotulo: "Frete e potes", tom: "ardosia" },
+  so_frete: { rotulo: "Só frete", tom: "rosa" },
+};
+
 export const STATUS_PAGAMENTO_COLABORADOR: Record<
   PagamentoColaborador["status"],
   { rotulo: string; tom: TomStatus }
 > = {
-  previsto: { rotulo: "Previsto", tom: "ardosia" },
-  aprovado: { rotulo: "Aprovado", tom: "turquesa" },
+  pendente: { rotulo: "Pendente", tom: "bronze" },
+  pago: { rotulo: "Pago", tom: "esmeralda" },
+};
+
+export const STATUS_BONUS_NIVEL: Record<
+  BonusNivel["status"],
+  { rotulo: string; tom: TomStatus }
+> = {
+  liberado: { rotulo: "Liberado, aguardando pagamento", tom: "bronze" },
   pago: { rotulo: "Pago", tom: "esmeralda" },
 };
 
@@ -255,14 +259,14 @@ export const STATUS_AJUSTE: Record<
   recusado: { rotulo: "Recusado", tom: "vermelho" },
 };
 
-export const CATEGORIA_DESPESA: Record<Despesa["categoria"], string> = {
-  frete: "Frete",
-  produto: "Produto",
-  trafego: "Tráfego",
-  equipe: "Equipe",
+export const CATEGORIA_DESPESA: Record<CategoriaDespesa, string> = {
   ferramentas: "Ferramentas",
-  impostos: "Impostos",
-  estrutura: "Estrutura",
+  telefonia: "Telefonia",
+  internet: "Internet",
+  aluguel: "Aluguel",
+  energia: "Energia",
+  contabilidade: "Contabilidade",
+  pro_labore: "Pró-labore",
   outros: "Outros",
 };
 

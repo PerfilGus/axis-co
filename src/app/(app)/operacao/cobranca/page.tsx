@@ -7,8 +7,9 @@ import { inicioDoMes } from "@/lib/datas";
 import { ROTULO_FORMA } from "@/lib/taxas";
 import { useSessao } from "@/lib/providers/sessao";
 import { usePedidos } from "@/lib/providers/pedidos";
-import { nomeColaborador } from "@/lib/mock/equipe";
-import { BANCO_POR_ID } from "@/lib/mock/financeiro";
+import { useEquipe } from "@/lib/providers/equipe";
+import { useCadastros } from "@/lib/providers/cadastros";
+import { taxaFrustracao as calcularFrustracao } from "@/lib/desempenho";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
 import { CabecalhoPagina } from "@/components/layout/cabecalho-pagina";
@@ -23,11 +24,11 @@ import { toast } from "@/components/ui/toast";
 
 type Aba = "aguardando" | "pagos" | "inadimplentes";
 
-const FRUSTRADOS = ["cancelado", "reembolsado", "inadimplente"];
-
 export default function PaginaCobranca() {
   const { usuario, escopoVendedores, podeOperarCobranca } = useSessao();
   const { pedidos: todos, marcarInadimplente } = usePedidos();
+  const { nomeDe: nomeColaborador } = useEquipe();
+  const { bancos } = useCadastros();
 
   const [aba, setAba] = useState<Aba>("aguardando");
   const [abertoId, setAbertoId] = useState<string | null>(null);
@@ -54,8 +55,7 @@ export default function PaginaCobranca() {
     .reduce((s, p) => s + (p.cobranca.valorRecebido ?? p.valorTotal + p.frete), 0);
 
   // Frustração real: tudo que saiu do trilho, sobre o total da carteira.
-  const frustrados = carteira.filter((p) => FRUSTRADOS.includes(p.status)).length;
-  const taxaFrustracao = carteira.length > 0 ? frustrados / carteira.length : 0;
+  const taxaFrustracao = calcularFrustracao(carteira) ?? 0;
 
   const listas: Record<Aba, Pedido[]> = {
     aguardando,
@@ -117,7 +117,7 @@ export default function PaginaCobranca() {
               <span>{ROTULO_FORMA[p.cobranca.formaPagamento]}</span>
               <span className="text-[11px] text-muted-fg">
                 {p.cobranca.bancoId
-                  ? (BANCO_POR_ID.get(p.cobranca.bancoId)?.nome ?? "—")
+                  ? (bancos.find((b) => b.id === p.cobranca.bancoId)?.nome ?? "—")
                   : "—"}
               </span>
             </div>
@@ -233,7 +233,7 @@ export default function PaginaCobranca() {
         ),
       },
     ];
-  }, [aba, marcarInadimplente, usuario.id]);
+  }, [aba, marcarInadimplente, usuario.id, nomeColaborador, bancos]);
 
   if (!podeOperarCobranca) {
     return (

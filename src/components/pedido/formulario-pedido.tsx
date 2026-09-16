@@ -15,8 +15,8 @@ import {
 import { buscarCep, cepValido } from "@/lib/cep";
 import { useSessao } from "@/lib/providers/sessao";
 import { usePedidos, type RascunhoPedido } from "@/lib/providers/pedidos";
-import { KITS } from "@/lib/mock/catalogo";
 import { opcoesCriativo } from "@/lib/mock/marketing";
+import { useCadastros } from "@/lib/providers/cadastros";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
 import { Card, CardConteudo, CardDescricao, CardTitulo } from "@/components/ui/card";
@@ -79,6 +79,13 @@ export function FormularioPedido() {
   const router = useRouter();
   const { usuario } = useSessao();
   const { criar } = usePedidos();
+  const { kits, produtos, criativos, linhas } = useCadastros();
+  // Kit à venda: ativo e com todos os produtos ativos.
+  const kitsVendaveis = kits.filter(
+    (k) =>
+      k.ativo &&
+      k.itens.every((i) => produtos.find((p) => p.id === i.produtoId)?.ativo),
+  );
   const [salvando, iniciarSalvamento] = useTransition();
 
   const [nome, setNome] = useState("");
@@ -110,7 +117,7 @@ export function FormularioPedido() {
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [erros, setErros] = useState<Erros>({});
 
-  const kit = KITS.find((k) => k.id === kitId) ?? null;
+  const kit = kits.find((k) => k.id === kitId) ?? null;
   const ajusteCentavos: Centavos | null = parseBRL(valorAjuste);
   const valorFinal =
     kit && comAjuste && ajusteCentavos
@@ -356,7 +363,7 @@ export function FormularioPedido() {
                 <SelecaoValor placeholder="Escolha o kit" />
               </SelecaoGatilho>
               <SelecaoConteudo>
-                {KITS.filter((k) => k.ativo).map((k) => (
+                {kitsVendaveis.map((k) => (
                   <SelecaoItem key={k.id} value={k.id}>
                     {k.nome} — {formatBRL(k.precoTabela)}
                   </SelecaoItem>
@@ -376,7 +383,7 @@ export function FormularioPedido() {
                 <SelecaoValor placeholder="Escolha o criativo" />
               </SelecaoGatilho>
               <SelecaoConteudo>
-                {opcoesCriativo().map((opcao) => (
+                {opcoesCriativo(criativos, linhas).map((opcao) => (
                   <SelecaoItem key={opcao.valor} value={opcao.valor}>
                     {opcao.rotulo}
                   </SelecaoItem>

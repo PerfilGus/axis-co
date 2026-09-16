@@ -4,6 +4,10 @@ import "./globals.css";
 import { AparenciaProvider, SCRIPT_APARENCIA } from "@/lib/providers/aparencia";
 import { SessaoProvider } from "@/lib/providers/sessao";
 import { PedidosProvider } from "@/lib/providers/pedidos";
+import { EquipeProvider } from "@/lib/providers/equipe";
+import { CadastrosProvider } from "@/lib/providers/cadastros";
+import { FinanceiroProvider } from "@/lib/providers/financeiro";
+import { MarketingProvider } from "@/lib/providers/marketing";
 import { ProvedorDica } from "@/components/ui/tooltip";
 import { Avisos } from "@/components/ui/toast";
 
@@ -39,14 +43,22 @@ export default function RootLayout({
       </head>
       <body className={`${spaceGrotesk.variable} antialiased`}>
         <AparenciaProvider>
-          <SessaoProvider>
-            <PedidosProvider>
-              <ProvedorDica delayDuration={250}>
-                {children}
-                <Avisos />
-              </ProvedorDica>
-            </PedidosProvider>
-          </SessaoProvider>
+          <EquipeProvider>
+            <SessaoProvider>
+              <CadastrosProvider>
+                <PedidosProvider>
+                  <FinanceiroProvider>
+                    <MarketingProvider>
+                      <ProvedorDica delayDuration={250}>
+                        {children}
+                        <Avisos />
+                      </ProvedorDica>
+                    </MarketingProvider>
+                  </FinanceiroProvider>
+                </PedidosProvider>
+              </CadastrosProvider>
+            </SessaoProvider>
+          </EquipeProvider>
         </AparenciaProvider>
       </body>
     </html>

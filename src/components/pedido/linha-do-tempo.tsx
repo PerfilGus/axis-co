@@ -3,7 +3,7 @@ import { formatBRL, formatDataHora } from "@/lib/format";
 import { estiloDoTom, STATUS_PEDIDO } from "@/lib/status";
 import type { EventoPedido, TipoEventoPedido } from "@/lib/types";
 import { Icone, type NomeIcone } from "@/components/icone";
-import { nomeColaborador } from "@/lib/mock/equipe";
+import { useEquipe } from "@/lib/providers/equipe";
 import { SeloFonte } from "@/components/shared/selo-status";
 
 const ICONE_POR_TIPO: Record<TipoEventoPedido, NomeIcone> = {
@@ -37,6 +37,7 @@ export function LinhaDoTempo({
   eventos: EventoPedido[];
   className?: string;
 }) {
+  const { nomeDe: nomeColaborador } = useEquipe();
   return (
     <ol className={cn("flex flex-col", className)}>
       {eventos.map((evento, i) => {

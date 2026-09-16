@@ -7,9 +7,10 @@ import { formatBRL, formatData } from "@/lib/format";
 import { STATUS_PEDIDO } from "@/lib/status";
 import { useSessao } from "@/lib/providers/sessao";
 import { usePedidos } from "@/lib/providers/pedidos";
-import { VENDEDORES, nomeColaborador } from "@/lib/mock/equipe";
-import { KITS } from "@/lib/mock/catalogo";
-import { CRIATIVOS, rotuloCriativo } from "@/lib/mock/marketing";
+import { useEquipe } from "@/lib/providers/equipe";
+import { useCadastros } from "@/lib/providers/cadastros";
+import { rotuloCriativo } from "@/lib/mock/marketing";
+import type { Colaborador, Criativo, Kit, LinhaWhatsApp } from "@/lib/types";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
 import { Contador } from "@/components/ui/badge";
@@ -32,7 +33,16 @@ const PERIODOS: Array<{ valor: string; rotulo: string; dias: number }> = [
   { valor: "90", rotulo: "Últimos 90 dias", dias: 90 },
 ];
 
-const COLUNAS: Array<ColunaTabela<Pedido>> = [
+/** Colunas e filtros leem os cadastros vivos: renomear um kit muda o filtro. */
+interface Cadastros {
+  nomeDe: (id: string | null) => string;
+  vendedores: Colaborador[];
+  kits: Kit[];
+  criativos: Criativo[];
+  linhas: LinhaWhatsApp[];
+}
+
+const montarColunas = ({ nomeDe, criativos, linhas }: Cadastros): Array<ColunaTabela<Pedido>> => [
   {
     chave: "codigo",
     titulo: "Pedido",
@@ -72,10 +82,10 @@ const COLUNAS: Array<ColunaTabela<Pedido>> = [
     chave: "criativo",
     titulo: "Criativo",
     escondeEm: "lg",
-    ordenarPor: (p) => rotuloCriativo(p.criativoId),
+    ordenarPor: (p) => rotuloCriativo(p.criativoId, criativos, linhas),
     render: (p) => (
       <span className="tabular text-[13px] text-muted-fg">
-        {rotuloCriativo(p.criativoId)}
+        {rotuloCriativo(p.criativoId, criativos, linhas)}
       </span>
     ),
   },
@@ -83,9 +93,9 @@ const COLUNAS: Array<ColunaTabela<Pedido>> = [
     chave: "vendedor",
     titulo: "Vendedor",
     escondeEm: "lg",
-    ordenarPor: (p) => nomeColaborador(p.vendedorId),
+    ordenarPor: (p) => nomeDe(p.vendedorId),
     render: (p) => (
-      <span className="text-muted-fg">{nomeColaborador(p.vendedorId)}</span>
+      <span className="text-muted-fg">{nomeDe(p.vendedorId)}</span>
     ),
   },
   {
@@ -111,7 +121,7 @@ const COLUNAS: Array<ColunaTabela<Pedido>> = [
   },
 ];
 
-const FILTROS: Array<FiltroTabela<Pedido>> = [
+const montarFiltros = ({ vendedores, kits, criativos, linhas }: Cadastros): Array<FiltroTabela<Pedido>> => [
   {
     chave: "status",
     rotulo: "Status",
@@ -123,7 +133,7 @@ const FILTROS: Array<FiltroTabela<Pedido>> = [
   {
     chave: "vendedor",
     rotulo: "Vendedor",
-    opcoes: VENDEDORES.map((v) => ({ valor: v.id, rotulo: v.nome })),
+    opcoes: vendedores.map((v) => ({ valor: v.id, rotulo: v.nome })),
     aplicar: (p, valor) => p.vendedorId === valor,
   },
   {
@@ -140,16 +150,16 @@ const FILTROS: Array<FiltroTabela<Pedido>> = [
   {
     chave: "kit",
     rotulo: "Kit",
-    opcoes: KITS.map((k) => ({ valor: k.id, rotulo: k.nome })),
+    opcoes: kits.map((k) => ({ valor: k.id, rotulo: k.nome })),
     aplicar: (p, valor) => p.itens.some((i) => i.kitId === valor),
   },
   {
     chave: "criativo",
     rotulo: "Criativo",
     opcoes: [
-      ...CRIATIVOS.filter((c) => c.ativo).map((c) => ({
+      ...criativos.filter((c) => c.ativo).map((c) => ({
         valor: c.id,
-        rotulo: rotuloCriativo(c.id),
+        rotulo: rotuloCriativo(c.id, criativos, linhas),
       })),
       { valor: "sem_criativo", rotulo: "Não identificado" },
     ],
@@ -174,14 +184,26 @@ export default function PaginaPedidos() {
 
   // O vendedor só vê os próprios pedidos: coluna e filtro de vendedor seriam
   // sempre o mesmo nome.
-  const colunas = useMemo(
-    () => (ehAdmin ? COLUNAS : COLUNAS.filter((c) => c.chave !== "vendedor")),
-    [ehAdmin],
+  const { nomeDe, colaboradores } = useEquipe();
+  const { kits, criativos, linhas } = useCadastros();
+  const cadastros = useMemo<Cadastros>(
+    () => ({
+      nomeDe,
+      vendedores: colaboradores.filter((c) => c.setor === "vendas"),
+      kits,
+      criativos,
+      linhas,
+    }),
+    [nomeDe, colaboradores, kits, criativos, linhas],
   );
-  const filtros = useMemo(
-    () => (ehAdmin ? FILTROS : FILTROS.filter((f) => f.chave !== "vendedor")),
-    [ehAdmin],
-  );
+  const colunas = useMemo(() => {
+    const todas = montarColunas(cadastros);
+    return ehAdmin ? todas : todas.filter((c) => c.chave !== "vendedor");
+  }, [ehAdmin, cadastros]);
+  const filtros = useMemo(() => {
+    const todos = montarFiltros(cadastros);
+    return ehAdmin ? todos : todos.filter((f) => f.chave !== "vendedor");
+  }, [ehAdmin, cadastros]);
 
   const fila = useMemo(
     () => solicitacoesPendentes(pedidos, escopoVendedores),

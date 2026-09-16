@@ -5,7 +5,7 @@ import type { AjusteValor, Pedido } from "@/lib/types";
 import { formatBRL, formatDataHora } from "@/lib/format";
 import { useSessao } from "@/lib/providers/sessao";
 import { usePedidos } from "@/lib/providers/pedidos";
-import { nomeColaborador } from "@/lib/mock/equipe";
+import { useEquipe } from "@/lib/providers/equipe";
 import { Icone, type NomeIcone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
 import {
@@ -57,6 +57,7 @@ function CartaoSolicitacao({
 }: Solicitacao & { aoAbrirPedido: (pedido: Pedido) => void }) {
   const { usuario } = useSessao();
   const { decidirAjuste, excluir } = usePedidos();
+  const { nomeDe: nomeColaborador } = useEquipe();
   const [observacao, setObservacao] = useState("");
   const tipo = ROTULO_TIPO[ajuste.tipo];
   const mexeNoValor = ajuste.tipo === "desconto" || ajuste.tipo === "acrescimo";

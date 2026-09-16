@@ -8,6 +8,8 @@ export interface Produto {
   gramas: number;
   /** Custo unitário do pote, usado no cálculo de custo de inadimplência. */
   custoUnitario: Centavos;
+  /** Foto enviada no cadastro. Sem ela, a tela desenha a inicial. */
+  fotoUrl: string | null;
   ativo: boolean;
   criadoEm: DataISO;
 }
@@ -17,6 +19,10 @@ export interface ItemKit {
   quantidade: number;
 }
 
+/**
+ * Kit é o que se vende. A estrutura aceita vários produtos por kit; o
+ * cadastro desta versão monta um produto só, e o pedido leva um kit.
+ */
 export interface Kit {
   id: ID;
   nome: string;

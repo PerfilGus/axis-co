@@ -4,8 +4,9 @@ import { cn } from "@/lib/utils";
 import type { Pedido } from "@/lib/types";
 import { formatBRL, formatData } from "@/lib/format";
 import { checklistAutorizacao, podeAutorizar } from "@/lib/checklist";
-import { nomeColaborador } from "@/lib/mock/equipe";
 import { rotuloCriativo } from "@/lib/mock/marketing";
+import { useEquipe } from "@/lib/providers/equipe";
+import { useCadastros } from "@/lib/providers/cadastros";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
 import { Caixa } from "@/components/ui/checkbox";
@@ -32,6 +33,8 @@ export function CartaoAutorizacao({
   aoCancelar: () => void;
   aoAbrir: () => void;
 }) {
+  const { nomeDe: nomeColaborador } = useEquipe();
+  const { criativos, linhas } = useCadastros();
   const itens = checklistAutorizacao(pedido);
   const liberado = podeAutorizar(pedido);
   const pendencias = itens.filter((i) => !i.ok);
@@ -65,7 +68,7 @@ export function CartaoAutorizacao({
           <span className="text-[13px]">{pedido.cliente.nome}</span>
           <span className="text-[11px] text-muted-fg">
             {pedido.cliente.endereco.cidade}/{pedido.cliente.endereco.uf} ·{" "}
-            {pedido.itens[0]?.kitNome} · {rotuloCriativo(pedido.criativoId)}
+            {pedido.itens[0]?.kitNome} · {rotuloCriativo(pedido.criativoId, criativos, linhas)}
           </span>
           <span className="text-[11px] text-muted-fg/80">
             {nomeColaborador(pedido.vendedorId)} · agendado em{" "}

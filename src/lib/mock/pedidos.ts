@@ -30,7 +30,17 @@ import {
 } from "./base";
 import { custoPotesDoKit, KITS } from "./catalogo";
 import { VENDEDORES } from "./equipe";
-import { CRIATIVOS_ATIVOS, LINHA_POR_ID } from "./marketing";
+import {
+  CRIATIVOS,
+  CRIATIVOS_ATIVOS,
+  DIAS_HISTORICO,
+  LANCAMENTOS_META_ADS,
+  LINHA_POR_ID,
+  QUALIDADE_CRIATIVO,
+  criativoNoAr,
+  vendasEsperadas,
+} from "./marketing";
+import { BANCO_POR_ID } from "./financeiro";
 import {
   BAIRROS,
   CIDADES,
@@ -42,15 +52,17 @@ import {
 } from "./pessoas";
 
 /**
- * Distribuição dos 62 pedidos. Cobre todos os status do ciclo, inclusive as
- * três saídas (cancelado, reembolsado, inadimplente).
+ * Distribuição dos 102 pedidos da operação corrente. Cobre todos os status do
+ * ciclo, inclusive as três saídas (cancelado, reembolsado, inadimplente). O
+ * volume em andamento acompanha o do histórico, para os dias recentes não
+ * parecerem uma queda de vendas no Meta Ads e no relatório.
  */
 const DISTRIBUICAO: Array<[StatusPedido, number]> = [
-  ["agendado", 8],
-  ["aguardando_autorizacao", 7],
-  ["autorizado", 5],
-  ["em_transito", 10],
-  ["entregue", 8],
+  ["agendado", 16],
+  ["aguardando_autorizacao", 14],
+  ["autorizado", 10],
+  ["em_transito", 20],
+  ["entregue", 14],
   ["pago", 14],
   ["cancelado", 4],
   ["reembolsado", 2],
@@ -358,9 +370,16 @@ function custosDoStatus(
   return { frete: 0, pote: 0, total: 0 };
 }
 
-function gerarPedido(r: Rng, n: number, status: StatusPedido): Pedido {
+/** O que o histórico fixa em vez de sortear. */
+interface OpcoesPedido {
+  idade: number;
+  criativoId: string | null;
+  vendedores: typeof VENDEDORES;
+}
+
+function gerarPedido(r: Rng, n: number, status: StatusPedido, opcoes?: OpcoesPedido): Pedido {
   const [minIdade, maxIdade] = IDADE_POR_STATUS[status];
-  const idade = inteiro(r, minIdade, maxIdade);
+  const idade = opcoes?.idade ?? inteiro(r, minIdade, maxIdade);
   const criadoEm = maisHoras(maisDias(HOJE, -idade), -inteiro(r, 0, 9));
 
   const cliente = gerarCliente(r, n);
@@ -369,8 +388,8 @@ function gerarPedido(r: Rng, n: number, status: StatusPedido): Pedido {
   const frete = kit.freteEstimado;
   const valorTotal = itens[0].precoUnitario;
 
-  const vendedor = escolher(r, VENDEDORES);
-  const criativo = escolher(r, CRIATIVOS_ATIVOS);
+  const vendedor = escolher(r, opcoes?.vendedores ?? VENDEDORES);
+  const criativoId = opcoes ? opcoes.criativoId : escolher(r, CRIATIVOS_ATIVOS).id;
   const linha =
     [...LINHA_POR_ID.values()].find((l) => l.vendedoresIds.includes(vendedor.id)) ??
     null;
@@ -436,7 +455,8 @@ function gerarPedido(r: Rng, n: number, status: StatusPedido): Pedido {
     formaPagamento: forma,
     pagoEm: pagoEm ? iso(pagoEm) : null,
     valorRecebido: pago ? valorTotal + frete : null,
-    taxaAplicada: pago ? taxaEstimada(bancoRecebimento, forma, valorTotal + frete) : null,
+    // Preenchida em `aplicarTaxas`, que conta a franquia de boletos em ordem.
+    taxaAplicada: null,
     bancoId: pago ? bancoRecebimento : null,
     comprovanteAnexoId: pago ? id(`anx${n}`, 1) : null,
     observacoes:
@@ -571,7 +591,7 @@ function gerarPedido(r: Rng, n: number, status: StatusPedido): Pedido {
     valorTotal,
     frete,
     vendedorId: vendedor.id,
-    criativoId: criativo.id,
+    criativoId,
     linhaWhatsappId: linha?.id ?? null,
     agendadoPara:
       status === "agendado" ? iso(maisDias(HOJE, inteiro(r, 0, 2))) : null,
@@ -770,15 +790,135 @@ function montarLinhaDoTempo(a: ArgsLinhaDoTempo): EventoPedido[] {
   );
 }
 
+/**
+ * Taxa de cada recebimento, na ordem em que foram pagos: o boleto só paga
+ * tarifa depois de esgotar a franquia do banco naquela competência.
+ */
+function aplicarTaxas(pedidos: Pedido[]): Pedido[] {
+  const boletos = new Map<string, number>();
+  const pagos = pedidos
+    .filter((p) => p.cobranca.pagoEm && p.cobranca.valorRecebido !== null)
+    .sort((a, b) => a.cobranca.pagoEm!.localeCompare(b.cobranca.pagoEm!));
+  const taxaPorId = new Map<string, number>();
+  for (const p of pagos) {
+    const banco = p.cobranca.bancoId ? (BANCO_POR_ID.get(p.cobranca.bancoId) ?? null) : null;
+    const chave = `${p.cobranca.bancoId}|${p.cobranca.pagoEm!.slice(0, 7)}`;
+    const emitidos = boletos.get(chave) ?? 0;
+    taxaPorId.set(
+      p.id,
+      taxaEstimada(banco, p.cobranca.formaPagamento, p.cobranca.valorRecebido!, emitidos),
+    );
+    if (p.cobranca.formaPagamento === "boleto") boletos.set(chave, emitidos + 1);
+  }
+  return pedidos.map((p) =>
+    taxaPorId.has(p.id)
+      ? { ...p, cobranca: { ...p.cobranca, taxaAplicada: taxaPorId.get(p.id)! } }
+      : p,
+  );
+}
+
+/** Leads de cada criativo por dia, para sortear de onde veio o pedido. */
+function leadsPorDia(): Map<string, Array<{ criativoId: string; peso: number }>> {
+  const mapa = new Map<string, Array<{ criativoId: string; peso: number }>>();
+  for (const l of LANCAMENTOS_META_ADS) {
+    const lista = mapa.get(l.data) ?? [];
+    lista.push({ criativoId: l.criativoId, peso: l.conversas * (QUALIDADE_CRIATIVO[l.criativoId] ?? 1) });
+    mapa.set(l.data, lista);
+  }
+  return mapa;
+}
+
+function sortearPonderado(r: Rng, opcoes: Array<{ criativoId: string; peso: number }>): string | null {
+  const total = opcoes.reduce((s, o) => s + o.peso, 0);
+  if (total <= 0) return null;
+  let alvo = r() * total;
+  for (const o of opcoes) {
+    alvo -= o.peso;
+    if (alvo <= 0) return o.criativoId;
+  }
+  return opcoes[opcoes.length - 1].criativoId;
+}
+
+/**
+ * O histórico chega com o rastreio arquivado, como a operação deixa depois de
+ * fechar o ciclo: sem isso, meses de objetos entregues lotariam Em trânsito.
+ */
+function arquivarRastreio(pedido: Pedido): Pedido {
+  if (!pedido.rastreio) return pedido;
+  const fechado = pedido.cobranca.pagoEm ?? pedido.rastreio.atualizadoEm;
+  const arquivadoEm = new Date(Math.min(new Date(fechado).getTime() + 2 * 86_400_000, HOJE.getTime()));
+  return {
+    ...pedido,
+    rastreio: { ...pedido.rastreio, destacado: false, arquivado: true, arquivadoEm: iso(arquivadoEm) },
+  };
+}
+
+/** Pedido fechado mais novo que o histórico gera: antes disso, o ciclo ainda corre. */
+const IDADE_MINIMA_HISTORICO = 12;
+
+/**
+ * Histórico de março até doze dias atrás: só pedidos que já fecharam o ciclo.
+ * Completa o volume esperado de cada dia descontando o que a operação corrente
+ * já pôs lá, e puxa o criativo dos leads do dia, para CPA e conversão da
+ * análise de criativos saírem dos próprios pedidos.
+ */
+function gerarHistorico(r: Rng, primeiroN: number, correntes: Pedido[]): Pedido[] {
+  const leads = leadsPorDia();
+  const porDia = new Map<string, number>();
+  for (const p of correntes) {
+    const dia = p.criadoEm.slice(0, 10);
+    porDia.set(dia, (porDia.get(dia) ?? 0) + 1);
+  }
+
+  const pedidos: Pedido[] = [];
+  let n = primeiroN;
+  for (let idade = DIAS_HISTORICO; idade >= IDADE_MINIMA_HISTORICO; idade--) {
+    const data = maisDias(HOJE, -idade);
+    const dia = iso(data).slice(0, 10);
+    const esperado = Math.round(vendasEsperadas(idade) * (0.75 + r() * 0.5));
+    const quantidade = Math.max(0, esperado - (porDia.get(dia) ?? 0));
+    const vendedores = VENDEDORES.filter((v) => new Date(v.entrouEm) <= data);
+    const doDia = leads.get(dia) ?? [];
+
+    for (let i = 0; i < quantidade; i++) {
+      const sorteio = r();
+      const status: StatusPedido =
+        sorteio < 0.075
+          ? "cancelado"
+          : sorteio < 0.135
+            ? "reembolsado"
+            : sorteio < 0.17 && idade >= 22
+              ? "inadimplente"
+              : "pago";
+      // Um em cada dez leads chega sem código rastreável.
+      const semCodigo = r() < 0.1;
+      const criativoId = semCodigo
+        ? null
+        : (sortearPonderado(r, doDia) ?? CRIATIVOS.find((c) => criativoNoAr(c, idade))?.id ?? null);
+      const pedido = gerarPedido(r, n++, status, {
+        idade,
+        criativoId,
+        vendedores: vendedores.length > 0 ? vendedores : VENDEDORES,
+      });
+      pedidos.push(arquivarRastreio(pedido));
+    }
+  }
+  return pedidos;
+}
+
 function gerarPedidos(): Pedido[] {
   const r = rng(987654321);
   const fila: StatusPedido[] = DISTRIBUICAO.flatMap(([status, quantidade]) =>
     Array.from({ length: quantidade }, () => status),
   );
-  const pedidos = fila.map((status, i) => gerarPedido(r, i + 1, status));
-  return pedidos.sort(
+  const correntes = fila.map((status, i) => gerarPedido(r, i + 1, status));
+  const historico = gerarHistorico(rng(20260401), correntes.length + 1, correntes);
+  const pedidos = aplicarTaxas([...correntes, ...historico]).sort(
     (a, b) => new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime(),
   );
+  // Código em ordem de criação: o mais novo fica logo abaixo do primeiro
+  // código que a sessão gera (AX-2500).
+  return pedidos.map((p, i) => ({ ...p, codigo: `AX-${2499 - i}` }));
 }
 
 export const PEDIDOS: Pedido[] = gerarPedidos();
@@ -826,30 +966,4 @@ export function somarValor(pedidos: Pedido[]): number {
 
 export function somarCustos(pedidos: Pedido[]): number {
   return pedidos.reduce((s, p) => s + p.custos.total, 0);
-}
-
-/**
- * Contagem de meta do vendedor: pedidos agendados por ele, menos os
- * cancelados. Regra fixa por setor, não configurável.
- */
-export function contagemMetaVendedor(vendedorId: string, desde?: Date): number {
-  return PEDIDOS.filter(
-    (p) =>
-      p.vendedorId === vendedorId &&
-      p.status !== "cancelado" &&
-      (!desde || new Date(p.criadoEm) >= desde),
-  ).length;
-}
-
-/** Contagem de meta do cobrador: pedidos pagos dos vendedores atribuídos. */
-export function contagemMetaCobrador(
-  vendedoresAtribuidos: string[],
-  desde?: Date,
-): number {
-  return PEDIDOS.filter(
-    (p) =>
-      p.status === "pago" &&
-      vendedoresAtribuidos.includes(p.vendedorId) &&
-      (!desde || (p.cobranca.pagoEm ? new Date(p.cobranca.pagoEm) >= desde : false)),
-  ).length;
 }

@@ -22,12 +22,13 @@ import type {
   TipoEventoPedido,
 } from "@/lib/types";
 import { formatBRL } from "@/lib/format";
-import { ROTULO_FORMA, taxaEstimada } from "@/lib/taxas";
+import { ROTULO_FORMA } from "@/lib/taxas";
 import { pendenciasDe } from "@/lib/checklist";
 import { avancarRastreio } from "@/lib/rastreio/simulacao";
 import { PEDIDOS } from "@/lib/mock/pedidos";
-import { custoPotesDoKit, KIT_POR_ID } from "@/lib/mock/catalogo";
-import { CRIATIVO_NAO_IDENTIFICADO, LINHA_POR_ID } from "@/lib/mock/marketing";
+import { custoPotesDoKit } from "@/lib/mock/catalogo";
+import { CRIATIVO_NAO_IDENTIFICADO } from "@/lib/mock/marketing";
+import { useCadastros } from "./cadastros";
 
 /**
  * Estado dos pedidos durante a sessão.
@@ -53,6 +54,8 @@ export interface DadosPagamento {
   data: DataISO;
   forma: Exclude<FormaPagamento, "nao_definido">;
   bancoId: ID;
+  /** Calculada na tela com o cadastro do banco e a franquia em curso. */
+  taxaAplicada: Centavos;
   observacoes: string | null;
 }
 
@@ -138,6 +141,7 @@ function simularCodigoRastreio(): string {
 
 export function PedidosProvider({ children }: { children: ReactNode }) {
   const [pedidos, setPedidos] = useState<Pedido[]>(PEDIDOS);
+  const { kits, produtos, linhas } = useCadastros();
 
   const aplicar = useCallback(
     (ids: ID[], transformar: (pedido: Pedido) => Pedido) => {
@@ -150,7 +154,7 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
   );
 
   const criar = useCallback<ContextoPedidos["criar"]>((rascunho, vendedorId) => {
-    const kit = KIT_POR_ID.get(rascunho.kitId);
+    const kit = kits.find((k) => k.id === rascunho.kitId);
     if (!kit) throw new Error(`Kit desconhecido: ${rascunho.kitId}`);
 
     const criadoEm = agora();
@@ -159,9 +163,7 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
     const valorTotal = kit.precoTabela;
 
     const linha =
-      [...LINHA_POR_ID.values()].find((l) =>
-        l.vendedoresIds.includes(vendedorId),
-      ) ?? null;
+      linhas.find((l) => l.ativa && l.vendedoresIds.includes(vendedorId)) ?? null;
 
     const anexos: Anexo[] = rascunho.anexos.map((a) => ({
       ...a,
@@ -270,7 +272,7 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
 
     setPedidos((atual) => [pedido, ...atual]);
     return pedido;
-  }, []);
+  }, [kits, linhas]);
 
   /**
    * Autoriza em lote. O resultado é calculado antes do `setPedidos` para que a
@@ -492,7 +494,7 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
     (pedidoId, dados, autorId) => {
       aplicar([pedidoId], (pedido) => {
         const quando = agora();
-        const taxa = taxaEstimada(dados.bancoId, dados.forma, dados.valorRecebido);
+        const taxa = dados.taxaAplicada;
         return {
           ...pedido,
           status: "pago" as StatusPedido,
@@ -534,7 +536,7 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
     (pedidoId, autorId) => {
       aplicar([pedidoId], (pedido) => {
         const quando = agora();
-        const pote = custoPotesDoKit(pedido.itens[0]?.kitId ?? "");
+        const pote = custoPotesDoKit(pedido.itens[0]?.kitId ?? "", kits, produtos);
         const custos = {
           frete: pedido.frete,
           pote,
@@ -562,7 +564,7 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
         };
       });
     },
-    [aplicar],
+    [aplicar, kits, produtos],
   );
 
   const excluir = useCallback<ContextoPedidos["excluir"]>((pedidoId) => {

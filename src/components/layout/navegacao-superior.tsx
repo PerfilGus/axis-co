@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Logo } from "./logo";
 import { SeletorPerfil } from "./seletor-perfil";
-import { NIVEL_POR_ID, NIVEIS } from "@/lib/mock/equipe";
+import { progressoNivel as medirNivel, useEquipe } from "@/lib/providers/equipe";
 
 /**
  * Navegação superior em dois níveis. Não existe barra lateral em tela nenhuma:
@@ -39,15 +39,8 @@ export function NavegacaoSuperior() {
   const naConfig = pathname.startsWith("/configuracoes");
   const notificacoes = totalNotificacoes(pedidos, escopoVendedores, ehAdmin);
 
-  const nivel = NIVEL_POR_ID.get(usuario.nivelId);
-  const proximo = NIVEIS.find((n) => n.ordem === (nivel?.ordem ?? 0) + 1);
-  const progressoNivel = proximo
-    ? Math.min(
-        (usuario.pontos - (nivel?.pontosNecessarios ?? 0)) /
-          (proximo.pontosNecessarios - (nivel?.pontosNecessarios ?? 0)),
-        1,
-      )
-    : 1;
+  const { niveis } = useEquipe();
+  const { atual: nivel, progresso: progressoNivel } = medirNivel(niveis, usuario);
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-bg/85 backdrop-blur-md">

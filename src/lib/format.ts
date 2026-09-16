@@ -196,3 +196,62 @@ export function formatHa(iso: DataISO | null): string {
   if (h < 24) return `há ${h}h`;
   return `há ${Math.round(h / 24)}d`;
 }
+
+/* ----------------------------------------------------------------
+   Campos de formulário: o valor do modelo vira texto editável e volta.
+   ---------------------------------------------------------------- */
+
+/** `123456` → `1.234,56`, para preencher um campo de dinheiro. */
+export function centavosParaCampo(centavos: Centavos | null): string {
+  if (centavos === null) return "";
+  return (centavos / 100).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+/** `350` → `3,5`, para preencher um campo de percentual. */
+export function bpsParaCampo(bps: number | null): string {
+  if (bps === null) return "";
+  return String(bps / 100).replace(".", ",");
+}
+
+/** `3,5` ou `3.5%` → `350` base points. Devolve `null` se não der. */
+export function parsePercentual(texto: string): number | null {
+  const limpo = texto.replace(/[^\d,.-]/g, "").replace(",", ".");
+  if (limpo === "" || limpo === "-") return null;
+  const numero = Number(limpo);
+  if (!Number.isFinite(numero)) return null;
+  return Math.round(numero * 100);
+}
+
+/* ----------------------------------------------------------------
+   Dias `aaaa-mm-dd`, sem hora nem fuso: formatados pelo texto.
+   ---------------------------------------------------------------- */
+
+const DIAS_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+/** `2026-09-14` → `14/09/2026` */
+export function formatDia(dia: string): string {
+  return `${dia.slice(8, 10)}/${dia.slice(5, 7)}/${dia.slice(0, 4)}`;
+}
+
+/** `2026-09-14` → `14/09` */
+export function formatDiaCurto(dia: string): string {
+  return `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
+}
+
+/** `2026-09-14` → `seg` */
+export function diaDaSemana(dia: string): string {
+  const [ano, mes, d] = dia.split("-").map(Number);
+  return DIAS_SEMANA[new Date(Date.UTC(ano, mes - 1, d)).getUTCDay()];
+}
+
+/** `2026-09` → `set/26`, para eixos e colunas estreitas. */
+export function formatCompetenciaCurta(competencia: string): string {
+  const [ano, mes] = competencia.split("-").map(Number);
+  const nome = new Date(Date.UTC(ano, mes - 1, 1))
+    .toLocaleDateString("pt-BR", { month: "short", timeZone: "UTC" })
+    .replace(".", "");
+  return `${nome}/${String(ano).slice(2)}`;
+}

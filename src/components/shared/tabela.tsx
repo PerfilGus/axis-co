@@ -43,6 +43,9 @@ const CLASSE_ESCONDE = {
  * Tabela com busca e filtros. Ordenação e filtragem vivem no cliente
  * enquanto os dados são mock; a assinatura já aceita a troca por
  * paginação de servidor sem mudar as telas.
+ *
+ * Desenha as primeiras `porPagina` linhas e oferece mostrar mais: o histórico
+ * de pedidos passa de mil registros.
  */
 export function Tabela<T extends { id: string }>({
   dados,
@@ -55,6 +58,8 @@ export function Tabela<T extends { id: string }>({
   acoes,
   className,
   densidade = "normal",
+  porPagina = 50,
+  rodape,
 }: {
   dados: T[];
   colunas: Array<ColunaTabela<T>>;
@@ -66,10 +71,17 @@ export function Tabela<T extends { id: string }>({
   acoes?: ReactNode;
   className?: string;
   densidade?: "normal" | "compacta";
+  porPagina?: number;
+  /** Linha de totais, desenhada no `tfoot` com as mesmas colunas. */
+  rodape?: (visiveis: T[]) => Partial<Record<string, ReactNode>>;
 }) {
   const [busca, setBusca] = useState("");
   const [selecionados, setSelecionados] = useState<Record<string, string>>({});
   const [ordem, setOrdem] = useState<{ chave: string; desc: boolean } | null>(null);
+  // O limite volta ao início quando a busca, o filtro ou a ordem mudam.
+  const assinatura = JSON.stringify([busca, selecionados, ordem, dados.length]);
+  const [pagina, setPagina] = useState({ assinatura, limite: porPagina });
+  const limite = pagina.assinatura === assinatura ? pagina.limite : porPagina;
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -241,7 +253,7 @@ export function Tabela<T extends { id: string }>({
               </tr>
             </thead>
             <tbody>
-              {filtrados.map((linha) => (
+              {filtrados.slice(0, limite).map((linha) => (
                 <tr
                   key={linha.id}
                   onClick={aoClicarLinha ? () => aoClicarLinha(linha) : undefined}
@@ -268,7 +280,44 @@ export function Tabela<T extends { id: string }>({
                 </tr>
               ))}
             </tbody>
+            {rodape && (
+              <tfoot>
+                <tr className="border-t border-border-strong bg-surface-2/60">
+                  {colunas.map((coluna) => {
+                    const conteudo = rodape(filtrados)[coluna.chave];
+                    return (
+                      <td
+                        key={coluna.chave}
+                        className={cn(
+                          "px-4 py-3 align-middle text-[13px] font-medium",
+                          coluna.alinhamento === "direita" && "tabular text-right",
+                          coluna.alinhamento === "centro" && "text-center",
+                          coluna.escondeEm && CLASSE_ESCONDE[coluna.escondeEm],
+                          coluna.classe,
+                        )}
+                      >
+                        {conteudo}
+                      </td>
+                    );
+                  })}
+                </tr>
+              </tfoot>
+            )}
           </table>
+          {filtrados.length > limite && (
+            <div className="flex items-center justify-center gap-3 border-t border-border p-3">
+              <span className="tabular text-xs text-muted-fg">
+                Mostrando {limite} de {filtrados.length}
+              </span>
+              <Botao
+                variante="secundaria"
+                tamanho="sm"
+                onClick={() => setPagina({ assinatura, limite: limite + porPagina })}
+              >
+                Mostrar mais {Math.min(porPagina, filtrados.length - limite)}
+              </Botao>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -97,7 +97,7 @@ const GRUPOS_ADMIN: GrupoNav[] = [
         rotulo: "Fornecedor",
         href: "/financeiro/fornecedor",
         icone: "fornecedor",
-        descricao: "Faturas de potes e pagamentos ao fornecedor.",
+        descricao: "Custo previsto dos envios, pagamentos e conferência de fatura.",
       },
       {
         rotulo: "Comissões e pagamentos",
@@ -117,7 +117,7 @@ const GRUPOS_ADMIN: GrupoNav[] = [
         rotulo: "Meta Ads",
         href: "/marketing/meta-ads",
         icone: "metaAds",
-        descricao: "Investimento diário e conversas geradas.",
+        descricao: "Investimento, leads e custo por venda, dia a dia.",
       },
       {
         rotulo: "Criativos",

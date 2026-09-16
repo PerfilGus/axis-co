@@ -34,9 +34,12 @@ export function AvatarAnel({
   const passo = (Math.PI * 2) / SEGMENTOS;
   const arco = passo * 0.6;
 
+  // Arredonda: o último dígito de seno e cosseno varia entre o Node e o
+  // navegador, e o `d` do caminho divergiria na hidratação.
+  const arredondar = (n: number) => Math.round(n * 1000) / 1000;
   const ponto = (angulo: number) => [
-    centro + raio * Math.cos(angulo),
-    centro + raio * Math.sin(angulo),
+    arredondar(centro + raio * Math.cos(angulo)),
+    arredondar(centro + raio * Math.sin(angulo)),
   ];
 
   return (

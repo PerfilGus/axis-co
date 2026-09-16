@@ -3,6 +3,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import type { Colaborador, Perfil } from "@/lib/types";
 import { USUARIO_POR_PERFIL } from "@/lib/mock/equipe";
+import { useEquipe } from "./equipe";
 import { criarPreferencia, usePreferencia } from "@/lib/armazenamento";
 
 /**
@@ -36,9 +37,13 @@ const Contexto = createContext<ContextoSessao | null>(null);
 
 export function SessaoProvider({ children }: { children: ReactNode }) {
   const [perfil, definirPerfil] = usePreferencia(prefPerfil);
+  const { colaboradores } = useEquipe();
 
   const valor = useMemo<ContextoSessao>(() => {
-    const usuario = USUARIO_POR_PERFIL[perfil];
+    // Lê do estado da equipe: mudar os vendedores atribuídos a um cobrador
+    // muda na hora quais pedidos ele enxerga.
+    const semente = USUARIO_POR_PERFIL[perfil];
+    const usuario = colaboradores.find((c) => c.id === semente.id) ?? semente;
     const ehAdmin = perfil === "admin";
     return {
       perfil,
@@ -57,7 +62,7 @@ export function SessaoProvider({ children }: { children: ReactNode }) {
           ? [usuario.id]
           : usuario.vendedoresAtribuidos,
     };
-  }, [perfil, definirPerfil]);
+  }, [perfil, definirPerfil, colaboradores]);
 
   return <Contexto.Provider value={valor}>{children}</Contexto.Provider>;
 }

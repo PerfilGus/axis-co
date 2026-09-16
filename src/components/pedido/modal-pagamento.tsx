@@ -6,14 +6,18 @@ import type { FormaPagamento, Pedido } from "@/lib/types";
 import { formatBRL, parseBRL } from "@/lib/format";
 import { deCampoData, paraCampoData } from "@/lib/datas";
 import {
+  aceitaForma,
+  boletosNoPeriodo,
   explicacaoTaxa,
   FORMAS_PAGAMENTO,
+  resumoTaxas,
   taxaEstimada,
   valorLiquido,
 } from "@/lib/taxas";
 import { useSessao } from "@/lib/providers/sessao";
 import { usePedidos } from "@/lib/providers/pedidos";
-import { BANCOS_PLATAFORMAS } from "@/lib/mock/financeiro";
+import { useCadastros } from "@/lib/providers/cadastros";
+import { Miniatura } from "@/components/shared/envio-imagem";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
 import {
@@ -65,7 +69,8 @@ function Formulario({
   aoFechar: () => void;
 }) {
   const { usuario } = useSessao();
-  const { registrarPagamento } = usePedidos();
+  const { pedidos, registrarPagamento } = usePedidos();
+  const { bancos: casas } = useCadastros();
 
   const esperado = pedido.valorTotal + pedido.frete;
   const [valor, setValor] = useState("");
@@ -76,14 +81,15 @@ function Formulario({
   const [erros, setErros] = useState<Record<string, string>>({});
 
   const recebido = parseBRL(valor) ?? esperado;
-  const taxa = bancoId ? taxaEstimada(bancoId, forma, recebido) : 0;
-  const liquido = bancoId ? valorLiquido(bancoId, forma, recebido) : recebido;
+  const banco = casas.find((b) => b.id === bancoId) ?? null;
+  // Só conta a franquia quando o boleto cai naquele banco.
+  const emitidos = banco && forma === "boleto" ? boletosNoPeriodo(pedidos, banco) : 0;
+  const taxa = taxaEstimada(banco, forma, recebido, emitidos);
+  const liquido = valorLiquido(banco, forma, recebido, emitidos);
   const diferenca = recebido - esperado;
 
-  // Link de cartão entra pela plataforma; Pix e boleto caem em conta.
-  const bancos = BANCOS_PLATAFORMAS.filter((b) =>
-    forma === "link_cartao" ? b.tipo === "plataforma" : b.tipo === "banco",
-  );
+  // Só aparece quem recebe nesta forma, conforme o cadastro de bancos.
+  const bancos = casas.filter((b) => b.ativo && aceitaForma(b, forma));
 
   function confirmar() {
     const encontrados: Record<string, string> = {};
@@ -104,13 +110,14 @@ function Formulario({
         data: deCampoData(data),
         forma,
         bancoId,
+        taxaAplicada: taxaEstimada(banco, forma, valorCentavos, emitidos),
         observacoes: observacoes.trim() || null,
       },
       usuario.id,
     );
 
     toast.success(`Pagamento de ${pedido.codigo} registrado`, {
-      description: `${formatBRL(valorCentavos)} via ${forma === "pix" ? "Pix" : forma === "boleto" ? "boleto" : "link de cartão"}. Taxa estimada de ${formatBRL(taxaEstimada(bancoId, forma, valorCentavos))}.`,
+      description: `${formatBRL(valorCentavos)} via ${forma === "pix" ? "Pix" : forma === "boleto" ? "boleto" : "link de cartão"}. Taxa estimada de ${formatBRL(taxaEstimada(banco, forma, valorCentavos, emitidos))}.`,
     });
 
     aoFechar();
@@ -192,6 +199,12 @@ function Formulario({
               Onde caiu<span className="text-[var(--accent)]"> *</span>
             </span>
             <div className="grid gap-2 sm:grid-cols-2">
+              {bancos.length === 0 && (
+                <p className="text-[13px] text-muted-fg sm:col-span-2">
+                  Nenhum banco ou plataforma ativo recebe nesta forma. Confira o cadastro em
+                  Configurações.
+                </p>
+              )}
               {bancos.map((banco) => {
                 const ativo = bancoId === banco.id;
                 return (
@@ -206,23 +219,18 @@ function Formulario({
                         : "border-border hover:border-border-strong",
                     )}
                   >
-                    <span
-                      className="flex size-7 shrink-0 items-center justify-center rounded-full"
-                      style={{ backgroundColor: `${banco.cor}22`, color: banco.cor }}
-                    >
-                      <Icone
-                        nome={banco.tipo === "banco" ? "bancos" : "loja"}
-                        size={14}
-                      />
-                    </span>
+                    <Miniatura
+                      nome={banco.nome}
+                      url={banco.iconeUrl}
+                      cor={banco.cor}
+                      tamanho={28}
+                    />
                     <span className="flex min-w-0 flex-col">
                       <span className="truncate text-[13px] font-medium">
                         {banco.nome}
                       </span>
-                      <span className="text-[11px] text-muted-fg">
-                        {banco.taxaBps > 0
-                          ? `Taxa de ${(banco.taxaBps / 100).toFixed(2).replace(".", ",")}%`
-                          : "Sem taxa percentual"}
+                      <span className="truncate text-[11px] text-muted-fg">
+                        {resumoTaxas(banco)}
                       </span>
                     </span>
                     {ativo && (
@@ -259,7 +267,7 @@ function Formulario({
                 </span>
               </div>
               <p className="text-[11px] text-muted-fg/80">
-                {explicacaoTaxa(bancoId, forma)} Vem do cadastro, não do extrato.
+                {explicacaoTaxa(banco, forma, emitidos)} Vem do cadastro, não do extrato.
               </p>
             </div>
           )}

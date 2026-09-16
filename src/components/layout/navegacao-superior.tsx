@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { GRUPOS_POR_PERFIL, grupoDaRota, GRUPO_CONFIG, CONFIG_POR_PERFIL } from "@/lib/nav";
+import { GRUPOS_POR_PERFIL, grupoDaRota, GRUPO_CONFIG, CONFIG_POR_PERFIL, HREF_PERFIL } from "@/lib/nav";
 import { totalNotificacoes } from "@/lib/contadores";
 import { usePedidos } from "@/lib/providers/pedidos";
 import { useSessao } from "@/lib/providers/sessao";
@@ -43,7 +43,13 @@ export function NavegacaoSuperior() {
   const { atual: nivel, progresso: progressoNivel } = medirNivel(niveis, usuario);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-bg/85 backdrop-blur-md">
+    <header
+      className={cn(
+        "sticky top-0 z-40 border-b border-border bg-bg/85 backdrop-blur-md",
+        // No celular a Minha área tem o próprio topo, com sino e ajustes.
+        pathname === "/minha-area" && "hidden md:block",
+      )}
+    >
       <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-3 px-4 lg:px-6">
         <Logo href={grupos[0].href} />
 
@@ -134,12 +140,22 @@ export function NavegacaoSuperior() {
               <MenuRotulo>
                 {usuario.nome} · {nivel?.nome ?? "Bronze"}
               </MenuRotulo>
-              <MenuItem asChild>
-                <Link href="/minha-area">
-                  <Icone nome="minhaArea" size={15} />
-                  Minha área
-                </Link>
-              </MenuItem>
+              {!ehAdmin && (
+                <>
+                  <MenuItem asChild>
+                    <Link href="/minha-area">
+                      <Icone nome="minhaArea" size={15} />
+                      Minha área
+                    </Link>
+                  </MenuItem>
+                  <MenuItem asChild>
+                    <Link href={HREF_PERFIL}>
+                      <Icone nome="usuario" size={15} />
+                      Perfil
+                    </Link>
+                  </MenuItem>
+                </>
+              )}
               <MenuItem onSelect={alternarTema}>
                 <Icone nome={tema === "escuro" ? "sol" : "lua"} size={15} />
                 Tema {tema === "escuro" ? "claro" : "escuro"}

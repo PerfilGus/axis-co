@@ -43,6 +43,16 @@ const MINHA_AREA: ItemNav = {
   descricao: "Seu desempenho, metas e conquistas.",
 };
 
+const PERFIL: ItemNav = {
+  rotulo: "Perfil",
+  href: "/minha-area/perfil",
+  icone: "usuario",
+  descricao: "Seus dados, sua remuneração e a aparência do sistema.",
+};
+
+/** Perfil só existe como aba no mobile; no desktop fica no menu do avatar. */
+export const HREF_PERFIL = PERFIL.href;
+
 const RANKING: ItemNav = {
   rotulo: "Ranking",
   href: "/equipe/ranking",
@@ -213,6 +223,7 @@ export const GRUPO_CONFIG: GrupoNav = {
 
 /** Grupo (ou Configurações) ao qual a rota atual pertence. */
 export function grupoDaRota(perfil: Perfil, pathname: string): GrupoNav | null {
+  if (perfil !== "admin" && pathname.startsWith(PERFIL.href)) return GRUPO_PERFIL;
   if (pathname.startsWith("/configuracoes")) {
     return { ...GRUPO_CONFIG, itens: CONFIG_POR_PERFIL[perfil] };
   }
@@ -232,6 +243,7 @@ export function itemDaRota(perfil: Perfil, pathname: string): ItemNav | null {
     COBRANCA,
     MINHA_AREA,
     RANKING,
+    ...(perfil === "admin" ? [] : [PERFIL]),
   ];
   return (
     todos.find((i) => i.href === pathname) ??
@@ -250,8 +262,27 @@ export function podeAcessar(perfil: Perfil, pathname: string): boolean {
   return permitidas.some((href) => pathname.startsWith(href));
 }
 
-/** Itens da barra inferior no mobile. Máximo de cinco. */
+const GRUPO_PERFIL: GrupoNav = {
+  id: "perfil",
+  rotulo: PERFIL.rotulo,
+  icone: PERFIL.icone,
+  href: PERFIL.href,
+  itens: [],
+};
+
+/**
+ * Itens da barra inferior no mobile. Máximo de cinco. Vendedor e cobrador têm
+ * a Minha área como início e o Perfil no lugar de Ajustes.
+ */
 export function itensMobile(perfil: Perfil): GrupoNav[] {
+  if (perfil !== "admin") {
+    return [
+      ...GRUPOS_POR_PERFIL[perfil].map((g) =>
+        g.id === "minha-area" ? { ...g, rotulo: "Início", icone: "dashboard" as const } : g,
+      ),
+      GRUPO_PERFIL,
+    ];
+  }
   const grupos = GRUPOS_POR_PERFIL[perfil].slice(0, 4);
   return [
     ...grupos,

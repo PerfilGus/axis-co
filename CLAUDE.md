@@ -12,8 +12,8 @@ Backend futuro: Neon Postgres via Drizzle, na Vercel.
 
 ## Estado atual
 
-Fases 1 (fundação), 2 (operação), 3 (configurações e equipe) e 4 (financeiro e
-marketing) concluídas.
+Fases 1 (fundação), 2 (operação), 3 (configurações e equipe), 4 (financeiro e
+marketing) e 5 (Minha área) concluídas.
 
 Nada é persistido e nenhuma integração é real. Pedidos, cadastros, equipe,
 financeiro e Meta Ads vivem em memória nos providers, semeados de
@@ -62,6 +62,11 @@ abril. A fonte `api` do Meta Ads é simulada.
 - `src/lib/desempenho.ts` — o que cada colaborador fez num intervalo: agendados,
   enviados, pagos, frustração. Metas, ranking e comissões contam daqui.
 - `src/lib/metas.ts` — progresso e faixa atingida (vale a mais alta, não soma).
+- `src/lib/ranking.ts` — classificação da equipe. Ranking e o card Equipe da
+  Minha área leem daqui.
+- `src/lib/minha-area.ts` — semana, sequência de dias e próximas conquistas.
+  Dia trabalhado é dia com algum evento de autoria do colaborador na linha do
+  tempo de um pedido (`diasComAtividade`, em `desempenho.ts`).
 - `src/lib/comissoes.ts` — fórmula de vendedor e cobrador e o fechamento com
   detalhamento. Pendente é recalculado; pago congela no provider.
 - `src/lib/fornecedor.ts` — custo previsto por envio (frete + potes; reembolsado

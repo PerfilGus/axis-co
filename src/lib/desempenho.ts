@@ -1,5 +1,5 @@
 import type { Centavos, Colaborador, Pedido, StatusPedido } from "@/lib/types";
-import { dentro, type Intervalo } from "@/lib/periodos";
+import { dentro, diaDe, type Intervalo } from "@/lib/periodos";
 
 /**
  * Números de um colaborador num intervalo, tirados direto dos pedidos.
@@ -91,4 +91,33 @@ export function desempenhoNo(
     faturamento: faturamentoBruto(agendados),
     frustracao: taxaFrustracao(doPeriodo),
   };
+}
+
+/**
+ * Taxa de recebimento do cobrador: dos pedidos da carteira entregues no
+ * intervalo, quantos já foram pagos. `null` sem entregas.
+ */
+export function taxaRecebimento(carteira: Pedido[], intervalo: Intervalo): number | null {
+  const entregues = carteira.filter(
+    (p) =>
+      ["entregue", "pago", "inadimplente"].includes(p.status) &&
+      dentro(p.rastreio?.entregueEm ?? null, intervalo),
+  );
+  if (entregues.length === 0) return null;
+  return entregues.filter((p) => p.status === "pago").length / entregues.length;
+}
+
+/**
+ * Dias (`aaaa-mm-dd`, fuso de São Paulo) em que o colaborador deixou rastro na
+ * linha do tempo de algum pedido: criou, pediu ajuste, cobrou, registrou
+ * pagamento. É o "dia trabalhado" enquanto não há ponto eletrônico.
+ */
+export function diasComAtividade(colaborador: Colaborador, pedidos: Pedido[]): Set<string> {
+  const dias = new Set<string>();
+  for (const pedido of pedidos) {
+    for (const evento of pedido.linhaDoTempo) {
+      if (evento.autorId === colaborador.id) dias.add(diaDe(evento.ocorridoEm));
+    }
+  }
+  return dias;
 }

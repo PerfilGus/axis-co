@@ -1,7 +1,5 @@
 "use client";
 
-import { cn } from "@/lib/utils";
-import { DESTAQUES, useAparencia, type Tema } from "@/lib/providers/aparencia";
 import { useSessao } from "@/lib/providers/sessao";
 import { Icone } from "@/components/icone";
 import { CabecalhoPagina } from "@/components/layout/cabecalho-pagina";
@@ -12,14 +10,9 @@ import { LinhaIndicadores } from "@/components/shared/indicadores";
 import { SeloStatusPedido } from "@/components/shared/selo-status";
 import { AvatarAnel } from "@/components/shared/avatar-anel";
 import { toast } from "@/components/ui/toast";
-
-const TEMAS: Array<{ chave: Tema; rotulo: string; icone: "lua" | "sol" }> = [
-  { chave: "escuro", rotulo: "Escuro", icone: "lua" },
-  { chave: "claro", rotulo: "Claro", icone: "sol" },
-];
+import { SeletorDestaque, SeletorTema } from "@/components/shared/seletores-aparencia";
 
 export default function PaginaAparencia() {
-  const { tema, destaque, definirTema, definirDestaque } = useAparencia();
   const { usuario } = useSessao();
 
   return (
@@ -38,56 +31,7 @@ export default function PaginaAparencia() {
                 O escuro é o padrão do sistema. O claro usa os mesmos tokens.
               </CardDescricao>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              {TEMAS.map((opcao) => {
-                const ativo = tema === opcao.chave;
-                return (
-                  <button
-                    key={opcao.chave}
-                    onClick={() => definirTema(opcao.chave)}
-                    aria-pressed={ativo}
-                    className={cn(
-                      "flex flex-col gap-3 rounded-[var(--radius-card-sm)] border p-4 text-left transition-colors",
-                      ativo
-                        ? "border-[var(--accent)]"
-                        : "border-border hover:border-border-strong",
-                    )}
-                  >
-                    <span
-                      className="flex h-16 items-end gap-1.5 rounded-[var(--radius-input)] border border-border p-2"
-                      style={{
-                        backgroundColor:
-                          opcao.chave === "escuro" ? "#121212" : "#eaeaea",
-                      }}
-                      aria-hidden
-                    >
-                      <span
-                        className="h-4 flex-1 rounded-full"
-                        style={{
-                          backgroundColor:
-                            opcao.chave === "escuro" ? "#202020" : "#fbfbfa",
-                        }}
-                      />
-                      <span
-                        className="h-4 w-8 rounded-full"
-                        style={{ backgroundColor: "var(--accent)" }}
-                      />
-                    </span>
-                    <span className="flex items-center gap-2 text-[13px] font-medium">
-                      <Icone nome={opcao.icone} size={15} />
-                      {opcao.rotulo}
-                      {ativo && (
-                        <Icone
-                          nome="checkCircle"
-                          size={15}
-                          className="ml-auto text-[var(--accent)]"
-                        />
-                      )}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            <SeletorTema />
           </CardConteudo>
         </Card>
 
@@ -99,33 +43,7 @@ export default function PaginaAparencia() {
                 Oito opções. As cores de status nunca mudam com essa escolha.
               </CardDescricao>
             </div>
-            <div className="grid grid-cols-4 justify-items-center gap-3 sm:grid-cols-8 lg:grid-cols-4">
-              {DESTAQUES.map((opcao) => {
-                const ativo = destaque === opcao.chave;
-                return (
-                  <button
-                    key={opcao.chave}
-                    onClick={() => definirDestaque(opcao.chave)}
-                    aria-pressed={ativo}
-                    title={opcao.rotulo}
-                    className={cn(
-                      "flex size-12 items-center justify-center rounded-full border-2 transition-colors",
-                      ativo ? "border-fg" : "border-transparent hover:border-border-strong",
-                    )}
-                  >
-                    <span
-                      className="flex size-9 items-center justify-center rounded-full"
-                      style={{ backgroundColor: opcao.cor }}
-                    >
-                      {ativo && (
-                        <Icone nome="check" size={16} className="text-[#121212]" />
-                      )}
-                    </span>
-                    <span className="sr-only">{opcao.rotulo}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <SeletorDestaque className="sm:grid-cols-8 lg:grid-cols-4" />
             <p className="text-[11px] text-muted-fg">
               Amarelo é o padrão da identidade.
             </p>

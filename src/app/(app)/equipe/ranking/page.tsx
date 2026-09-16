@@ -2,11 +2,15 @@
 
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import type { Colaborador, Setor } from "@/lib/types";
+import type { Setor } from "@/lib/types";
 import { formatNumero, formatPercentual } from "@/lib/format";
-import { desempenhoNo, type Desempenho } from "@/lib/desempenho";
 import { intervaloDoRanking, PERIODOS_RANKING, type PeriodoRanking } from "@/lib/periodos";
-import { progressoNivel, useEquipe } from "@/lib/providers/equipe";
+import {
+  classificarEquipe,
+  type FiltroSetorRanking,
+  type PosicaoRanking as Posicao,
+} from "@/lib/ranking";
+import { useEquipe } from "@/lib/providers/equipe";
 import { usePedidos } from "@/lib/providers/pedidos";
 import { useSessao } from "@/lib/providers/sessao";
 import { Icone } from "@/components/icone";
@@ -23,14 +27,7 @@ import { AvatarAnel } from "@/components/shared/avatar-anel";
 import { ControleSegmentado } from "@/components/shared/controles";
 import { EstadoVazio } from "@/components/shared/estado-vazio";
 
-type FiltroSetor = "todos" | Exclude<Setor, "administracao">;
-
-interface Posicao {
-  colaborador: Colaborador;
-  desempenho: Desempenho;
-  nivel: string;
-  progresso: number;
-}
+type FiltroSetor = FiltroSetorRanking;
 
 /** `12 agendados` ou `8 pagos` — o que o setor persegue. */
 function unidade(setor: Setor, n: number) {
@@ -115,28 +112,10 @@ export default function PaginaEquipeRanking() {
     usuario.setor === "financeiro" ? "financeiro" : "vendas",
   );
 
-  const posicoes = useMemo<Posicao[]>(() => {
-    const intervalo = intervaloDoRanking(periodo);
-    return colaboradores
-      .filter((c) => c.ativo && c.setor !== "administracao")
-      .filter((c) => setor === "todos" || c.setor === setor)
-      .map((colaborador) => {
-        const { atual, progresso } = progressoNivel(niveis, colaborador);
-        return {
-          colaborador,
-          desempenho: desempenhoNo(colaborador, pedidos, intervalo),
-          nivel: atual?.nome ?? "—",
-          progresso,
-        };
-      })
-      .sort(
-        (a, b) =>
-          b.desempenho.pedidos - a.desempenho.pedidos ||
-          (a.desempenho.frustracao ?? 1) - (b.desempenho.frustracao ?? 1) ||
-          b.desempenho.faturamento - a.desempenho.faturamento ||
-          a.colaborador.nome.localeCompare(b.colaborador.nome, "pt-BR"),
-      );
-  }, [colaboradores, niveis, pedidos, periodo, setor]);
+  const posicoes = useMemo<Posicao[]>(
+    () => classificarEquipe(colaboradores, niveis, pedidos, intervaloDoRanking(periodo), setor),
+    [colaboradores, niveis, pedidos, periodo, setor],
+  );
 
   const semMovimento = posicoes.every((p) => p.desempenho.pedidos === 0);
   const demais = posicoes.slice(3);

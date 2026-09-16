@@ -53,7 +53,7 @@ export function comissaoCobrador(recebido: Centavos, comissaoBps: number): Centa
 }
 
 /** Base sobre a qual a % de comissão incide, já descontado o frustrado. */
-function baseDaComissao(colaborador: Colaborador, carteira: Pedido[], intervalo: Intervalo) {
+export function baseDaComissao(colaborador: Colaborador, carteira: Pedido[], intervalo: Intervalo) {
   if (colaborador.setor === "financeiro") {
     const recebido = valorRecebido(pagosNo(carteira, intervalo));
     return { bruto: recebido, base: recebido };

@@ -429,6 +429,8 @@ export const pedidos = pgTable(
     autorizadoEm: dataISO(),
     autorizadoPor: text(),
     rastreio: jsonb().$type<Rastreio | null>(),
+    /** Rastreio apagado da aba Rastreio; o pedido e o código ficam. */
+    rastreioRemovidoEm: dataISO(),
     cobranca: jsonb().$type<Cobranca>().notNull(),
     custos: jsonb().$type<CustosPedido>().notNull(),
     confirmacaoPorTexto: boolean().notNull().default(false),
@@ -437,6 +439,8 @@ export const pedidos = pgTable(
     observacoes: text(),
     fonte: text().$type<"manual" | "api">().notNull().default("manual"),
     atualizadoEm: dataISO().notNull(),
+    /** Entrada num status que encerra a retenção de arquivos (`lib/retencao.ts`). */
+    finalizadoEm: dataISO(),
   },
   (t) => [index().on(t.vendedorId), index().on(t.status), index().on(t.criadoEm)],
 );
@@ -493,6 +497,8 @@ export const anexos = pgTable(
     /** A que o arquivo pertence: `pedido`, `pagamento_fornecedor`. */
     entidade: text().notNull(),
     entidadeId: text(),
+    /** Conteúdo apagado do Blob pela retenção; o registro fica. */
+    removidoEm: dataISO(),
   },
   (t) => [index().on(t.entidade, t.entidadeId)],
 );

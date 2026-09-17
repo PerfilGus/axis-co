@@ -10,11 +10,14 @@ import { ORDEM_SECOES_RASTREIO, STATUS_RASTREIO } from "@/lib/status";
 export type AbaRastreio = "transito" | "arquivados";
 export type OrdemRastreio = "atualizacao" | "criacao";
 
-/** Um pedido só entra na lista de rastreio depois que o envio é autorizado. */
+/**
+ * Um pedido só entra na lista de rastreio depois que o envio é autorizado, e
+ * sai dela para sempre quando o Admin apaga o rastreio.
+ */
 export function temRastreio(
   pedido: Pedido,
 ): pedido is Pedido & { rastreio: NonNullable<Pedido["rastreio"]> } {
-  return pedido.rastreio !== null;
+  return pedido.rastreio !== null && pedido.rastreioRemovidoEm === null;
 }
 
 export function rastreaveis(pedidos: Pedido[]): Array<
@@ -30,14 +33,46 @@ export function atualizacaoDe(
   return ultimaAtualizacaoDe(pedido.rastreio, pedido.criadoEm);
 }
 
+export interface BuscaRastreio {
+  termo: string;
+  /** Ids que o servidor achou pelo telefone completo (`buscarRastreiosPorTelefone`). */
+  idsPorTelefone: ReadonlySet<string>;
+}
+
+const normalizar = (texto: string) =>
+  texto.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+
+/**
+ * Nome, número do pedido (`AX-1001` ou só `1001`), código de rastreio e
+ * telefone. A lista só tem o telefone mascarado; o número completo chega pelos
+ * ids que o servidor devolveu.
+ */
+export function bateComBusca(
+  pedido: Pedido & { rastreio: NonNullable<Pedido["rastreio"]> },
+  busca: BuscaRastreio,
+): boolean {
+  const termo = normalizar(busca.termo);
+  if (!termo) return true;
+  if (busca.idsPorTelefone.has(pedido.id)) return true;
+  const compacto = termo.replace(/[\s.\-()]/g, "");
+  return (
+    normalizar(pedido.cliente.nome).includes(termo) ||
+    pedido.codigo.toLowerCase().replace("-", "").includes(compacto) ||
+    pedido.rastreio.codigo.toLowerCase().includes(compacto) ||
+    (compacto.length > 0 && /^\d+$/.test(compacto) && pedido.cliente.telefone.replace(/\D/g, "").includes(compacto))
+  );
+}
+
 export function rastreiosVisiveis(
   pedidos: Pedido[],
   aba: AbaRastreio,
   filtro: StatusRastreio | "todos",
+  busca: BuscaRastreio = { termo: "", idsPorTelefone: new Set() },
 ) {
   return rastreaveis(pedidos)
     .filter((p) => (aba === "transito" ? !p.rastreio.arquivado : p.rastreio.arquivado))
-    .filter((p) => (filtro === "todos" ? true : p.rastreio.status === filtro));
+    .filter((p) => (filtro === "todos" ? true : p.rastreio.status === filtro))
+    .filter((p) => bateComBusca(p, busca));
 }
 
 /**

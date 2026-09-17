@@ -17,6 +17,7 @@ import type { Colaborador, Pedido, Perfil } from "@/lib/types";
  * | Aprovar/recusar ajuste                | sim   | não               | não                    |
  * | Anexos do pedido: enviar              | sim   | próprios          | atribuídos (comprovante) |
  * | Autorizar envio, rastreio             | sim   | não               | não                    |
+ * | Apagar rastreio arquivado             | sim   | não               | não                    |
  * | Pagamento, inadimplência              | sim   | não               | atribuídos             |
  * | Cadastros, metas, níveis, conquistas  | sim   | só leitura        | só leitura             |
  * | Equipe e usuários                     | sim   | não               | não                    |
@@ -38,6 +39,8 @@ export const podeCancelarPedido = ehAdmin;
 export const podeAprovarAjuste = ehAdmin;
 export const podeAutorizarEnvio = ehAdmin;
 export const podeOperarRastreio = ehAdmin;
+/** Tira o objeto da aba Rastreio. O pedido não é tocado. */
+export const podeApagarRastreio = ehAdmin;
 export const podeConfigurar = ehAdmin;
 export const podeGerirEquipe = ehAdmin;
 export const podeVerFinanceiro = ehAdmin;

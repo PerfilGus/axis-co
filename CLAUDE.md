@@ -69,9 +69,10 @@ store do Blob. Separar antes de ir para produção.
 
 - `src/lib/types/` — contratos do domínio. `rastreio.ts` é o contrato de `order`
   do axis-tracking, com o mapa de nomes no topo do arquivo.
-- `src/lib/rastreio/` — a aba Rastreio, migrada do axis-tracking: lista e
-  agrupamento, cópia inteligente, CSV, mapa evento SRO → status e a atualização
-  simulada. O levantamento do que foi portado, ajustado ou removido está em
+- `src/lib/rastreio/` — a aba Rastreio, migrada do axis-tracking: lista,
+  busca e agrupamento, cópia inteligente, CSV, mapa evento SRO → status e a
+  atualização simulada. Rastreio apagado (`rastreioRemovidoEm`) some da aba e
+  de toda sincronização; o pedido fica intacto. Arquivados não expiram. O levantamento do que foi portado, ajustado ou removido está em
   `referencia/axis-tracking/INVENTARIO.md` — consulte antes de mexer nessa aba.
 - `src/lib/servidor/` — só servidor (`server-only`). `schema.ts` (Drizzle, chaves
   camelCase gravadas em snake_case; `timestamptz` trafega como ISO -03:00),
@@ -92,6 +93,13 @@ store do Blob. Separar antes de ir para produção.
 - `src/proxy.ts` — CSP com nonce e headers de segurança; sessão e perfil por rota.
 - `src/app/api/anexos/[id]` — única leitura de arquivo: confere sessão e
   permissão, registra visualização de anexo de pedido, responde sem cache.
+  Arquivo apagado pela retenção responde 410.
+- `src/app/api/cron/retencao` — rotina diária do Vercel Cron (`vercel.json`),
+  sem sessão, protegida por `CRON_SECRET`. Apaga do Blob os arquivos de pedido
+  vencidos, marca `anexos.removido_em` e grava uma atividade por arquivo.
+- `src/lib/retencao.ts` — prazo dos arquivos de pedido: 60 dias da criação ou
+  7 dias após Pago/Cancelado/Reembolsado, o que vier primeiro. `finalizadoEm` é
+  carimbado por `gravarPedido` e zera se o status sai da lista.
 - `drizzle/` — migrations versionadas (`npm run db:gerar`, `npm run db:migrar`).
 - `src/lib/nav.ts` — mapa de navegação e permissões por perfil.
 - `src/lib/status.ts` — rótulos e tons de status. **As cores de status são
@@ -143,7 +151,9 @@ store do Blob. Separar antes de ir para produção.
 - `src/components/lgpd/textos.tsx` — termo e política, RASCUNHO para revisão
   jurídica. Mudar o termo exige subir `VERSAO_TERMO` em `lib/servidor/sessao.ts`.
 - `src/components/ui/` — primitivos reestilizados.
-- `src/components/shared/` — componentes de produto reutilizáveis.
+- `src/components/shared/` — componentes de produto reutilizáveis. Busca é
+  sempre `CampoBusca` (com debounce), inclusive dentro da `Tabela`.
+- `src/lib/tela.ts` — `useTelaLarga`, para trocar coluna fixa por gaveta.
 
 ## Convenções
 

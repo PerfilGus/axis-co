@@ -26,6 +26,7 @@ interface ContextoSessao {
   podeAprovarAjuste: boolean;
   podeOperarCobranca: boolean;
   podeConfigurar: boolean;
+  podeApagarRastreio: boolean;
   /** Vendedores cujos pedidos este usuário opera; `null` = todos. */
   escopoVendedores: string[] | null;
 }
@@ -61,6 +62,7 @@ export function SessaoProvider({
       podeAprovarAjuste: permissoes.podeAprovarAjuste(usuario),
       podeOperarCobranca: permissoes.podeOperarCobranca(usuario),
       podeConfigurar: permissoes.podeConfigurar(usuario),
+      podeApagarRastreio: permissoes.podeApagarRastreio(usuario),
       escopoVendedores: permissoes.escopoVendedores(usuario),
     };
   }, [colaboradores, inicial, email, doisFatores]);

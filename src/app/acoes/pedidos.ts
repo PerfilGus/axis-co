@@ -1,6 +1,6 @@
 "use server";
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Anexo, Pedido } from "@/lib/types";
 import { agoraISO } from "@/lib/iso";
@@ -9,6 +9,7 @@ import {
   pedidoNoEscopo,
   podeAnexarNoPedido,
   podeAprovarAjuste,
+  podeApagarRastreio,
   podeAutorizarEnvio,
   podeCancelarPedido,
   podeCobrarPedido,
@@ -118,6 +119,7 @@ export async function criarPedido(formulario: FormData): Promise<Resultado<Pedid
           criadoEm: dc.agora,
           criadoPor: ctx.colaborador.id,
           url: `/api/anexos/${salvo.id}`,
+          removidoEm: null,
         };
         enviados.push(anexo);
         pedido = dominio.anexar(pedido, anexo, dc);
@@ -176,6 +178,7 @@ export async function anexarAoPedido(formulario: FormData): Promise<Resultado<Pe
       criadoEm: dc.agora,
       criadoPor: ctx.colaborador.id,
       url: `/api/anexos/${salvo.id}`,
+      removidoEm: null,
     };
     try {
       await db.transaction(async (tx) => {
@@ -479,6 +482,71 @@ export async function arquivarRastreios(ids: string[], arquivar: boolean): Promi
   });
 }
 
+/**
+ * Apaga rastreios arquivados da aba Rastreio. O pedido fica intacto — status,
+ * valores, linha do tempo e o código de rastreio —, só ganha a marca que o
+ * tira da lista e das sincronizações. Uma atividade por item.
+ */
+export async function apagarRastreios(ids: string[]): Promise<Resultado<Pedido[]>> {
+  return executar(async () => {
+    const ctx = await exigirUsuario();
+    exigir(podeApagarRastreio(ctx.colaborador), "Só o Admin apaga rastreios.");
+    const lista = await carregarPedidos(z.array(schemaId).min(1).max(5000).parse(ids));
+    const dc = contexto(ctx);
+    const apagados = lista
+      .map((p) => ({ antes: p, depois: dominio.apagarRastreio(p, dc) }))
+      .filter((x): x is { antes: Pedido; depois: Pedido } => x.depois !== null);
+    if (apagados.length === 0) throw new ErroDeAcao("Só dá para apagar rastreio arquivado.");
+    await db.transaction(async (tx) => {
+      for (const a of apagados) {
+        await gravarPedido(tx, a.antes, a.depois, ctx.colaborador.perfil);
+      }
+      await registrarAtividades(
+        apagados.map((a) => ({
+          usuarioId: ctx.colaborador.id,
+          papel: ctx.colaborador.perfil,
+          acao: "exclusao",
+          entidade: "rastreio",
+          entidadeId: a.depois.id,
+          titulo: `Rastreio ${a.antes.rastreio?.codigo} apagado da aba Rastreio`,
+          antes: { codigo: a.antes.rastreio?.codigo ?? null, status: a.antes.rastreio?.status ?? null, arquivado: true },
+          depois: { rastreioRemovidoEm: a.depois.rastreioRemovidoEm },
+          dados: { pedidoId: a.depois.id, pedido: a.antes.codigo },
+        })),
+        tx,
+      );
+    });
+    return devolver(apagados.map((a) => a.depois.id));
+  });
+}
+
+/**
+ * Busca da aba Rastreio pelo telefone completo. A lista só conhece o número
+ * mascarado, então o servidor compara e devolve apenas ids — nenhum telefone
+ * sai daqui, e não há visualização a registrar.
+ */
+export async function buscarRastreiosPorTelefone(termo: string): Promise<Resultado<string[]>> {
+  return executar(async () => {
+    const ctx = await exigirUsuario();
+    exigir(podeOperarRastreio(ctx.colaborador));
+    const digitos = z.string().max(40).parse(termo).replace(/\D/g, "");
+    if (digitos.length < 6) return [];
+    const linhas = await db
+      .select({ id: t.pedidos.id })
+      .from(t.pedidos)
+      .innerJoin(t.clientes, eq(t.clientes.id, t.pedidos.clienteId))
+      .where(
+        and(
+          isNotNull(t.pedidos.rastreio),
+          isNull(t.pedidos.rastreioRemovidoEm),
+          sql`regexp_replace(${t.clientes.telefone}, '[^0-9]', '', 'g') like ${"%" + digitos + "%"}`,
+        ),
+      )
+      .limit(500);
+    return linhas.map((l) => l.id);
+  });
+}
+
 /** Abrir o pedido consome o destaque; sem id, zera todos. */
 export async function limparDestaques(ids: string[] | null): Promise<Resultado<string[]>> {
   return executar(async () => {
@@ -498,13 +566,18 @@ export async function limparDestaques(ids: string[] | null): Promise<Resultado<s
 
 /**
  * Consulta os Correios. A integração ainda não está conectada: a ação existe,
- * confere permissão e devolve quantos objetos seriam verificados.
+ * confere permissão e devolve quantos objetos seriam verificados. Quando for
+ * ligada, mantém o filtro de `rastreioRemovidoEm`: rastreio apagado não volta.
  */
 export async function atualizarRastreios(): Promise<Resultado<{ atualizados: number; verificados: number; integrado: boolean }>> {
   return executar(async () => {
     const ctx = await exigirUsuario();
     exigir(podeOperarRastreio(ctx.colaborador));
-    const lista = await db.select({ rastreio: t.pedidos.rastreio }).from(t.pedidos);
+    // Rastreio apagado nunca volta a ser consultado nem reaparece na lista.
+    const lista = await db
+      .select({ rastreio: t.pedidos.rastreio })
+      .from(t.pedidos)
+      .where(isNull(t.pedidos.rastreioRemovidoEm));
     const verificados = lista.filter((p) => p.rastreio && !p.rastreio.arquivado).length;
     return { atualizados: 0, verificados, integrado: false };
   });

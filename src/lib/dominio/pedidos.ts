@@ -143,6 +143,7 @@ export function criarPedido(
     autorizadoEm: null,
     autorizadoPor: null,
     rastreio: null,
+    rastreioRemovidoEm: null,
     cobranca: {
       responsavelId: null,
       tentativas: 0,
@@ -180,6 +181,7 @@ export function criarPedido(
     observacoes: rascunho.observacoes.trim() || null,
     fonte: "manual",
     atualizadoEm: ctx.agora,
+    finalizadoEm: null,
   };
 }
 
@@ -420,6 +422,16 @@ export function arquivarRastreio(pedido: Pedido, arquivar: boolean, ctx: Context
       arquivadoEm: arquivar ? ctx.agora : null,
     },
   };
+}
+
+/**
+ * Apaga o rastreio da aba Rastreio. Só vale para arquivado: tira o objeto da
+ * lista e das sincronizações, sem mexer em status, valores, histórico nem no
+ * código de rastreio guardado no pedido. Não tem volta pela interface.
+ */
+export function apagarRastreio(pedido: Pedido, ctx: Contexto): Pedido | null {
+  if (!pedido.rastreio?.arquivado || pedido.rastreioRemovidoEm) return null;
+  return { ...pedido, rastreioRemovidoEm: ctx.agora };
 }
 
 export function limparDestaque(pedido: Pedido): Pedido | null {

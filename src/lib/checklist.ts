@@ -15,8 +15,10 @@ export interface ItemChecklist {
 }
 
 export function checklistAutorizacao(pedido: Pedido): ItemChecklist[] {
-  const temPrint = pedido.anexos.some((a) => a.tipo === "print_confirmacao");
-  const temAudio = pedido.anexos.some((a) => a.tipo === "audio_confirmacao");
+  // Arquivo apagado pela retenção não conta como prova.
+  const presentes = pedido.anexos.filter((a) => !a.removidoEm);
+  const temPrint = presentes.some((a) => a.tipo === "print_confirmacao");
+  const temAudio = presentes.some((a) => a.tipo === "audio_confirmacao");
   const ajustePendente = pedido.ajustes.find(
     (a) =>
       a.status === "pendente" && (a.tipo === "desconto" || a.tipo === "acrescimo"),

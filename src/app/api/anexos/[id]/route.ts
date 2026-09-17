@@ -26,6 +26,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     (anexo.entidade === "pedido" && podeVerAnexo(ctx.colaborador)) ||
     (anexo.entidade === "pagamento_fornecedor" && podeVerFinanceiro(ctx.colaborador));
   if (!permitido) return new Response("Sem permissão", { status: 403 });
+  // Apagado pela retenção: o registro existe, o conteúdo não.
+  if (anexo.removidoEm) return new Response("Arquivo removido", { status: 410 });
 
   const arquivo = await lerArquivo(anexo.caminhoBlob);
   if (!arquivo || !arquivo.stream) return new Response("Não encontrado", { status: 404 });

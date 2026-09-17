@@ -145,7 +145,7 @@ Regras do modelo:
 | 7.11 | Timeline vazia: "Sem eventos de rastreio ainda." | Portado com ajuste — o texto muda, já que aqui não há botão "Atualizar rastreios" que dependa dos Correios |
 | 7.12 | Botão Arquivar no rodapé, largura total, contorno neutro que **fica vermelho no hover** | Portado |
 | 7.13 | Em Arquivados vira "Desarquivar", sem o alerta vermelho | Portado |
-| 7.14 | Em Arquivados, botão Excluir vermelho abaixo de Desarquivar, com confirmação | Removido — ver §12 |
+| 7.14 | Em Arquivados, botão Excluir vermelho abaixo de Desarquivar, com confirmação | Portado com ajuste — "Apagar" ao lado de Desarquivar, no card e no painel; só tira da aba (§12) |
 
 ## 8. Barra superior
 
@@ -161,7 +161,7 @@ Importar CSV · Exportar CSV · Redefinir destacados · Arquivar/Excluir em mass
 | 8.5 | **Importar CSV** (`.xlsx`/`.csv` → revisão → gravação em lote) | Removido — os pedidos vêm da autorização de envio |
 | 8.6 | **Exportar CSV**: visíveis, respeitando aba e filtro; `;`, BOM UTF-8; 12 colunas | Portado |
 | 8.7 | **Redefinir destacados**: limpa `highlighted` de todos | Portado |
-| 8.8 | **Arquivar em massa** (Em Trânsito) / **Excluir em massa** (Arquivados) | Portado só o arquivar — ver §12 |
+| 8.8 | **Arquivar em massa** (Em Trânsito) / **Excluir em massa** (Arquivados) | Portado com ajuste — em Arquivados, caixa por item e "Selecionar todos" (respeita a busca), com Desarquivar e Apagar em massa (§12) |
 | 8.9 | Modo de seleção: 1º clique liga as caixas, botão vira "Arquivar (N)", aparece **Cancelar** | Portado |
 | 8.10 | Sem nada marcado, o botão de ação fica desabilitado | Portado |
 | 8.11 | Trocar de aba cancela a seleção | Portado |
@@ -213,17 +213,22 @@ Monta a mensagem pronta para o WhatsApp, sempre com data/hora absoluta.
 
 No axis-tracking o banco de rastreio é a fonte de verdade e existe uma trava:
 `DELETE ... AND archived = TRUE`, mais uma limpeza automática que apaga
-arquivados com mais de 7 dias.
+arquivados com mais de 7 dias (`api/cleanup.js`, cron `0 4 * * *` no
+`vercel.json` de lá).
 
 No sistema Axis o pedido é a fonte de verdade — ele tem valor, custo, comissão e
-cobrança presos a ele. Apagar um pedido a partir da tela de Rastreio destruiria
-o registro financeiro, não só o acompanhamento de entrega. Por isso:
+cobrança presos a ele. Por isso:
 
-- **Excluir** (individual, em massa e a limpeza de 7 dias) **não foi portado**.
-- Tirar um pedido da lista de Rastreio é **arquivar**, que é manual e reversível,
-  como pede a especificação da Fase 2.
-- A exclusão de pedido continua existindo, com a permissão certa, em
-  **Operação › Pedidos**, e só para o Admin.
+- **A limpeza de 7 dias não existe aqui.** Arquivados ficam guardados sem prazo.
+  A rotina do axis-tracking só age no banco daquele projeto.
+- **Apagar** (Fase 3) existe só em **Arquivados**, individual e em massa, só para
+  o Admin, sempre com confirmação que mostra a quantidade. Não apaga o pedido:
+  grava `pedidos.rastreio_removido_em`, que tira o objeto da aba Rastreio, dos
+  contadores, do CSV e de toda atualização de rastreio. Status, valores, linha
+  do tempo e o código de rastreio dentro do pedido continuam; financeiro,
+  cobrança e metas não mudam. Cada item grava uma atividade `exclusao` da
+  entidade `rastreio`.
+- A exclusão do pedido inteiro continua em **Operação › Pedidos**, só para o Admin.
 
 ## 13. Backend (fora do escopo desta fase)
 
@@ -232,12 +237,12 @@ o registro financeiro, não só o acompanhamento de entrega. Por isso:
 | `GET /api/orders` | Substituído pelo `PedidosProvider` (mock em memória) |
 | `POST /api/orders` | Removido junto com a inclusão manual |
 | `PATCH /api/orders` | Vira ação do provider (arquivar, limpar destaque) |
-| `DELETE /api/orders` | Removido — ver §12 |
+| `DELETE /api/orders` | Vira a ação `apagarRastreios` — ver §12 |
 | `POST /api/refresh` | Simulado no cliente |
 | `GET /api/tracking/:codigo` | Não portado — entra na fase de backend |
 | `POST /api/import` | Removido junto com a importação |
 | `GET /api/cep/:cep` | Já existe como `src/lib/cep.ts` (simulado) |
-| `GET /api/cleanup` | Removido — ver §12 |
+| `GET /api/cleanup` | Não portado — arquivados não expiram (§12) |
 
 `lib/correios.js` e `lib/normalize.js` ficam como referência de tipo:
 

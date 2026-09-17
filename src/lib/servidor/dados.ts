@@ -191,6 +191,7 @@ export async function carregarFinanceiro(quem: Colaborador): Promise<DadosFinanc
               criadoEm: anexo.criadoEm,
               criadoPor: anexo.criadoPor,
               url: urlDoAnexo(anexo.id),
+              removidoEm: anexo.removidoEm,
             }
           : null,
       };

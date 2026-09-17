@@ -42,6 +42,11 @@ export interface Anexo {
   criadoPor: ID;
   /** Endereço privado `/api/anexos/[id]`: só abre para quem está logado. */
   url: string;
+  /**
+   * Quando a política de retenção apagou o conteúdo (`lib/retencao.ts`). O
+   * registro continua, para o detalhe mostrar que o arquivo existiu.
+   */
+  removidoEm: DataISO | null;
 }
 
 export interface Paginacao {

@@ -13,6 +13,9 @@ import { Botao } from "./button";
 export const Gaveta = DialogPrimitive.Root;
 export const GavetaGatilho = DialogPrimitive.Trigger;
 export const GavetaFechar = DialogPrimitive.Close;
+/** Para gavetas sem `GavetaCabecalho`: o leitor de tela ainda precisa do título. */
+export const GavetaTitulo = DialogPrimitive.Title;
+export const GavetaDescricao = DialogPrimitive.Description;
 
 export function GavetaConteudo({
   className,

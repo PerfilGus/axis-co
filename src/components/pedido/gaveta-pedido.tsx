@@ -18,6 +18,7 @@ import { usePedidos } from "@/lib/providers/pedidos";
 import { useEquipe } from "@/lib/providers/equipe";
 import { useCadastros } from "@/lib/providers/cadastros";
 import { codigoCompleto } from "@/lib/criativos";
+import { DIAS_APOS_CRIACAO, diasParaRemocao } from "@/lib/retencao";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
 import {
@@ -95,6 +96,56 @@ function Linha({
         {valor}
       </span>
     </div>
+  );
+}
+
+/**
+ * Anexos com a retenção (`lib/retencao.ts`): enquanto o arquivo existe, quantos
+ * dias faltam; depois, só o aviso no lugar do link. O "agora" é o de quando a
+ * aba abriu, para a contagem não mudar entre renders.
+ */
+function ListaAnexos({ pedido }: { pedido: Pedido }) {
+  const [agora] = useState(() => Date.now());
+  const dias = diasParaRemocao(pedido, agora);
+  const prazo = dias === 0 ? "Remoção hoje" : `Remoção em ${dias} ${dias === 1 ? "dia" : "dias"}`;
+
+  return (
+    <ul className="flex flex-col gap-2">
+      {pedido.anexos.map((anexo) =>
+        anexo.removidoEm ? (
+          <li
+            key={anexo.id}
+            className="flex items-center gap-3 rounded-full border border-dashed border-border py-2 pr-4 pl-3.5"
+          >
+            <Icone nome="anexo" size={15} className="shrink-0 text-muted-fg" />
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-[13px] text-muted-fg">{anexo.nome}</span>
+              <span className="text-[11px] text-muted-fg">
+                Arquivo removido em {formatData(anexo.removidoEm)} (política de {DIAS_APOS_CRIACAO} dias)
+              </span>
+            </span>
+          </li>
+        ) : (
+          <li key={anexo.id}>
+            <a
+              href={anexo.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 rounded-full border border-border bg-surface-2 py-2 pr-4 pl-3.5 transition-colors hover:border-border-strong"
+            >
+              <Icone nome="anexo" size={15} className="shrink-0 text-muted-fg" />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-[13px]">{anexo.nome}</span>
+                <span className="text-[11px] text-muted-fg">
+                  {formatData(anexo.criadoEm)} · {prazo}
+                </span>
+              </span>
+              <Icone nome="ver" size={14} className="shrink-0 text-muted-fg" />
+            </a>
+          </li>
+        ),
+      )}
+    </ul>
   );
 }
 
@@ -460,25 +511,7 @@ export function GavetaPedido({
 
           {aba === "anexos" && (
             <div className="flex flex-col gap-5">
-              {pedido.anexos.length > 0 && (
-                <ul className="flex flex-col gap-2">
-                  {pedido.anexos.map((anexo) => (
-                    <li key={anexo.id}>
-                      <a
-                        href={anexo.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 rounded-full border border-border bg-surface-2 py-2 pr-4 pl-3.5 transition-colors hover:border-border-strong"
-                      >
-                        <Icone nome="anexo" size={15} className="text-muted-fg" />
-                        <span className="min-w-0 flex-1 truncate text-[13px]">{anexo.nome}</span>
-                        <span className="text-[11px] text-muted-fg">{formatData(anexo.criadoEm)}</span>
-                        <Icone nome="ver" size={14} className="text-muted-fg" />
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              {pedido.anexos.length > 0 && <ListaAnexos pedido={pedido} />}
               {podeAnexarNoPedido(usuario, pedido) && (
                 <div className="flex flex-col gap-3">
                   <ControleSegmentado

@@ -5,6 +5,8 @@ import type { StatusRastreio } from "@/lib/types";
 import { STATUS_RASTREIO, ORDEM_SECOES_RASTREIO } from "@/lib/status";
 import { usePedidos } from "@/lib/providers/pedidos";
 import { useCadastros } from "@/lib/providers/cadastros";
+import { useSessao } from "@/lib/providers/sessao";
+import { useTelaLarga } from "@/lib/tela";
 import {
   agruparEmSecoes,
   rastreaveis,
@@ -15,10 +17,18 @@ import {
 import { baixarCsv } from "@/lib/rastreio/csv";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
+import { Caixa } from "@/components/ui/checkbox";
 import { CabecalhoPagina } from "@/components/layout/cabecalho-pagina";
+import { CampoBusca } from "@/components/shared/campo-busca";
 import { ControleSegmentado } from "@/components/shared/controles";
 import { EstadoVazio } from "@/components/shared/estado-vazio";
 import { ModalConfirmacao } from "@/components/shared/modal-confirmacao";
+import {
+  Gaveta,
+  GavetaConteudo,
+  GavetaDescricao,
+  GavetaTitulo,
+} from "@/components/ui/drawer";
 import {
   Selecao,
   SelecaoConteudo,
@@ -38,8 +48,8 @@ import { toast } from "@/components/ui/toast";
  * original, todas anotadas lá:
  *
  * - Não há inclusão manual: os objetos vêm dos pedidos autorizados.
- * - Não há exclusão: aqui o pedido é o registro financeiro, e tirá-lo da lista
- *   é arquivar — manual e reversível (§12 do inventário).
+ * - Apagar existe só em Arquivados, só para o Admin, e tira o rastreio desta
+ *   aba sem tocar no pedido (§12). Não há limpeza automática.
  * - "Atualizar rastreios" chama o servidor, que responde sem novidade enquanto
  *   a integração com os Correios não está conectada.
  */
@@ -47,38 +57,80 @@ import { toast } from "@/components/ui/toast";
 /** Ciclo automático de 1 minuto, como no original. */
 const INTERVALO_ATUALIZACAO_MS = 60_000;
 
+/** Abaixo disso a máscara do telefone já basta para a busca local. */
+const DIGITOS_BUSCA_TELEFONE = 6;
+
+type Operacao = "arquivar" | "desarquivar" | "apagar";
+
+const plural = (n: number, singular: string, plural: string) => (n === 1 ? singular : plural);
+
 export default function PaginaRastreio() {
   const {
     pedidos,
     arquivarRastreio,
+    apagarRastreio,
+    buscarPorTelefone,
     limparDestaque,
     redefinirDestaques,
     atualizarRastreios,
     revelarDados,
   } = usePedidos();
   const { kits } = useCadastros();
+  const { podeApagarRastreio } = useSessao();
+  const telaLarga = useTelaLarga();
 
   const [aba, setAba] = useState<AbaRastreio>("transito");
   const [filtro, setFiltro] = useState<StatusRastreio | "todos">("todos");
   const [ordem, setOrdem] = useState<OrdemRastreio>("atualizacao");
+  const [termo, setTermo] = useState("");
+  const [porTelefone, setPorTelefone] = useState<{ termo: string; ids: Set<string> }>({
+    termo: "",
+    ids: new Set(),
+  });
   const [abertoId, setAbertoId] = useState<string | null>(null);
   const [selecionando, setSelecionando] = useState(false);
   const [marcados, setMarcados] = useState<Set<string>>(new Set());
-  const [confirmando, setConfirmando] = useState(false);
+  const [confirmacao, setConfirmacao] = useState<{ operacao: Operacao; ids: string[] } | null>(null);
   const [atualizando, setAtualizando] = useState(false);
 
   const todos = useMemo(() => rastreaveis(pedidos), [pedidos]);
   const emTransito = todos.filter((p) => !p.rastreio.arquivado).length;
   const arquivados = todos.length - emTransito;
 
+  // O telefone completo só o servidor conhece; a resposta vale para o termo
+  // que a pediu, e um termo mais novo a descarta.
+  useEffect(() => {
+    if (termo.replace(/\D/g, "").length < DIGITOS_BUSCA_TELEFONE) return;
+    let valido = true;
+    buscarPorTelefone(termo).then((ids) => {
+      if (valido && ids) setPorTelefone({ termo, ids: new Set(ids) });
+    });
+    return () => {
+      valido = false;
+    };
+  }, [termo, buscarPorTelefone]);
+
+  const idsPorTelefone = useMemo(
+    () => (porTelefone.termo === termo ? porTelefone.ids : new Set<string>()),
+    [porTelefone, termo],
+  );
+
   const visiveis = useMemo(
-    () => rastreiosVisiveis(pedidos, aba, filtro),
-    [pedidos, aba, filtro],
+    () => rastreiosVisiveis(pedidos, aba, filtro, { termo, idsPorTelefone }),
+    [pedidos, aba, filtro, termo, idsPorTelefone],
   );
   const secoes = useMemo(
     () => agruparEmSecoes(visiveis, ordem),
     [visiveis, ordem],
   );
+
+  // A seleção só age sobre o que está na tela: trocar a busca não leva junto
+  // itens que ficaram escondidos.
+  const marcadosVisiveis = useMemo(
+    () => visiveis.filter((p) => marcados.has(p.id)).map((p) => p.id),
+    [visiveis, marcados],
+  );
+  const todosMarcados = visiveis.length > 0 && marcadosVisiveis.length === visiveis.length;
 
   const aberto = abertoId
     ? (todos.find((p) => p.id === abertoId) ?? null)
@@ -86,15 +138,24 @@ export default function PaginaRastreio() {
 
   /* ---------------- ações ---------------- */
 
+  function alternarMarca(id: string, marcar?: boolean) {
+    setMarcados((atual) => {
+      const proximo = new Set(atual);
+      const ligar = marcar ?? !proximo.has(id);
+      if (ligar) proximo.add(id);
+      else proximo.delete(id);
+      return proximo;
+    });
+  }
+
+  function marcarTodos(marcar: boolean) {
+    setMarcados(marcar ? new Set(visiveis.map((p) => p.id)) : new Set());
+  }
+
   // Abrir um pedido consome o destaque; clicar de novo no mesmo fecha o painel.
   function abrirOuFechar(id: string) {
     if (selecionando) {
-      setMarcados((atual) => {
-        const proximo = new Set(atual);
-        if (proximo.has(id)) proximo.delete(id);
-        else proximo.add(id);
-        return proximo;
-      });
+      alternarMarca(id);
       return;
     }
     if (abertoId === id) {
@@ -117,7 +178,7 @@ export default function PaginaRastreio() {
 
       if (resultado.atualizados > 0) {
         toast.success(
-          `${resultado.atualizados} rastreio${resultado.atualizados === 1 ? "" : "s"} atualizado${resultado.atualizados === 1 ? "" : "s"}`,
+          `${resultado.atualizados} ${plural(resultado.atualizados, "rastreio atualizado", "rastreios atualizados")}`,
         );
       } else if (!silencioso) {
         toast("Nenhuma novidade nos rastreios", {
@@ -137,7 +198,9 @@ export default function PaginaRastreio() {
       setAbertoId(null);
       return;
     }
-    if (marcados.size > 0) setConfirmando(true);
+    if (marcadosVisiveis.length > 0) {
+      setConfirmacao({ operacao: "arquivar", ids: marcadosVisiveis });
+    }
   }
 
   function sairDaSelecao() {
@@ -145,23 +208,41 @@ export default function PaginaRastreio() {
     setMarcados(new Set());
   }
 
-  async function confirmarArquivamento() {
-    const ids = [...marcados];
-    const paraArquivar = aba === "transito";
+  async function confirmar() {
+    if (!confirmacao) return;
+    const { operacao, ids } = confirmacao;
+
+    if (operacao === "apagar") {
+      const total = await apagarRastreio(ids);
+      setConfirmacao(null);
+      if (total === null) return;
+      if (abertoId && ids.includes(abertoId)) setAbertoId(null);
+      sairDaSelecao();
+      toast.success(`${total} ${plural(total, "rastreio apagado", "rastreios apagados")}`, {
+        description: "Os pedidos seguem intactos.",
+      });
+      return;
+    }
+
+    const paraArquivar = operacao === "arquivar";
     const total = await arquivarRastreio(ids, paraArquivar);
-    setConfirmando(false);
+    setConfirmacao(null);
     if (total === null) return;
+    if (abertoId && ids.includes(abertoId)) setAbertoId(null);
     sairDaSelecao();
     toast.success(
-      `${total} pedido${total === 1 ? "" : "s"} movido${total === 1 ? "" : "s"} para ${paraArquivar ? "Arquivados" : "Em Trânsito"}`,
+      total === 1
+        ? `Pedido movido para ${paraArquivar ? "Arquivados" : "Em Trânsito"}`
+        : `${total} pedidos movidos para ${paraArquivar ? "Arquivados" : "Em Trânsito"}`,
     );
   }
 
-  async function arquivarUm() {
-    if (!aberto) return;
-    const paraArquivar = !aberto.rastreio.arquivado;
-    if ((await arquivarRastreio([aberto.id], paraArquivar)) === null) return;
-    setAbertoId(null);
+  /** Desarquivar e arquivar um item não pedem confirmação; apagar sempre pede. */
+  async function arquivarUm(id: string, arquivado: boolean) {
+    const paraArquivar = !arquivado;
+    if ((await arquivarRastreio([id], paraArquivar)) === null) return;
+    if (abertoId === id) setAbertoId(null);
+    alternarMarca(id, false);
     toast.success(
       paraArquivar
         ? "Pedido movido para Arquivados"
@@ -173,7 +254,7 @@ export default function PaginaRastreio() {
 
   // Pausa com a aba em segundo plano, com modal aberto e durante a seleção —
   // repintar nessas horas rola a lista de quem está lendo ou perde a seleção.
-  const pausado = confirmando || selecionando;
+  const pausado = confirmacao !== null || selecionando || marcados.size > 0;
 
   // O ciclo é montado uma vez só; estas referências levam o estado de agora
   // para dentro dele sem remontar o intervalo a cada render.
@@ -212,7 +293,40 @@ export default function PaginaRastreio() {
 
   /* ---------------- render ---------------- */
 
-  const rotuloLote = aba === "transito" ? "Arquivar" : "Desarquivar";
+  const naoAchou = todos.length > 0 && visiveis.length === 0;
+
+  const textosConfirmacao: Record<Operacao, { titulo: string; mensagem: string; rotulo: string }> = {
+    arquivar: {
+      titulo: "Arquivar pedidos",
+      mensagem: `${confirmacao?.ids.length ?? 0} pedido(s) vão para Arquivados. A ação é reversível.`,
+      rotulo: "Arquivar",
+    },
+    desarquivar: {
+      titulo: "Desarquivar pedidos",
+      mensagem: `${confirmacao?.ids.length ?? 0} pedido(s) voltam para Em Trânsito. A ação é reversível.`,
+      rotulo: "Desarquivar",
+    },
+    apagar: {
+      titulo: `Apagar ${confirmacao?.ids.length ?? 0} ${plural(confirmacao?.ids.length ?? 0, "rastreio", "rastreios")}`,
+      mensagem:
+        "Sai da aba Rastreio e não volta nas próximas atualizações. O pedido continua intacto: status, valores, histórico e o código de rastreio. Não dá para desfazer.",
+      rotulo: "Apagar",
+    },
+  };
+  const textos = confirmacao ? textosConfirmacao[confirmacao.operacao] : null;
+
+  const painel = aberto && (
+    <PainelRastreio
+      pedido={aberto}
+      aoFechar={() => setAbertoId(null)}
+      aoArquivar={() => arquivarUm(aberto.id, aberto.rastreio.arquivado)}
+      aoApagar={
+        podeApagarRastreio && aberto.rastreio.arquivado
+          ? () => setConfirmacao({ operacao: "apagar", ids: [aberto.id] })
+          : undefined
+      }
+    />
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -265,6 +379,13 @@ export default function PaginaRastreio() {
       />
 
       <div className="flex flex-wrap items-center gap-2">
+        <CampoBusca
+          valor={termo}
+          aoMudar={setTermo}
+          placeholder="Buscar por nome, telefone, rastreio ou pedido"
+          className="basis-full sm:basis-auto sm:max-w-80"
+        />
+
         <Selecao
           value={filtro}
           onValueChange={(v) => setFiltro(v as StatusRastreio | "todos")}
@@ -328,43 +449,83 @@ export default function PaginaRastreio() {
           Redefinir destacados
         </Botao>
 
-        <Botao
-          variante={selecionando && marcados.size > 0 ? "principal" : "secundaria"}
-          tamanho="sm"
-          onClick={alternarSelecao}
-          disabled={selecionando && marcados.size === 0}
-        >
-          <Icone
-            nome={aba === "transito" ? "arquivar" : "desarquivar"}
-            size={14}
-          />
-          {rotuloLote}
-          {selecionando && marcados.size > 0 ? ` (${marcados.size})` : ""}
-        </Botao>
+        {aba === "transito" && (
+          <>
+            <Botao
+              variante={selecionando && marcadosVisiveis.length > 0 ? "principal" : "secundaria"}
+              tamanho="sm"
+              onClick={alternarSelecao}
+              disabled={selecionando && marcadosVisiveis.length === 0}
+            >
+              <Icone nome="arquivar" size={14} />
+              Arquivar
+              {selecionando && marcadosVisiveis.length > 0 ? ` (${marcadosVisiveis.length})` : ""}
+            </Botao>
 
-        {selecionando && (
-          <Botao variante="fantasma" tamanho="sm" onClick={sairDaSelecao}>
-            Cancelar
-          </Botao>
+            {selecionando && (
+              <Botao variante="fantasma" tamanho="sm" onClick={sairDaSelecao}>
+                Cancelar
+              </Botao>
+            )}
+          </>
         )}
       </div>
 
+      {aba === "arquivados" && visiveis.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[var(--radius-card-sm)] border border-border bg-surface-1 px-3 py-2">
+          <label className="flex min-h-9 cursor-pointer items-center gap-2.5 pr-2 text-[13px]">
+            <Caixa
+              checked={todosMarcados ? true : marcadosVisiveis.length > 0 ? "indeterminate" : false}
+              onCheckedChange={() => marcarTodos(!todosMarcados)}
+            />
+            {termo || filtro !== "todos" ? "Selecionar todos da busca" : "Selecionar todos"}
+          </label>
+          <span className="tabular text-[12px] text-muted-fg">
+            {marcadosVisiveis.length} de {visiveis.length}
+          </span>
+          {marcadosVisiveis.length > 0 && (
+            <div className="ml-auto flex items-center gap-2">
+              <Botao
+                variante="secundaria"
+                tamanho="sm"
+                onClick={() => setConfirmacao({ operacao: "desarquivar", ids: marcadosVisiveis })}
+              >
+                <Icone nome="desarquivar" size={14} />
+                Desarquivar ({marcadosVisiveis.length})
+              </Botao>
+              {podeApagarRastreio && (
+                <Botao
+                  variante="perigo"
+                  tamanho="sm"
+                  onClick={() => setConfirmacao({ operacao: "apagar", ids: marcadosVisiveis })}
+                >
+                  <Icone nome="excluir" size={14} />
+                  Apagar ({marcadosVisiveis.length})
+                </Botao>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {visiveis.length === 0 ? (
         <EstadoVazio
-          icone="rastreio"
+          icone={termo ? "busca" : "rastreio"}
           titulo={
-            todos.length === 0
+            !naoAchou
               ? "Nenhum objeto em circulação"
-              : "Nenhum pedido encontrado com esse filtro."
+              : termo
+                ? "Nenhum rastreio encontrado para essa busca."
+                : "Nenhum pedido encontrado com esse filtro."
           }
           descricao={
-            todos.length === 0
+            !naoAchou
               ? "Os objetos entram aqui sozinhos quando o Admin autoriza o envio — não há inclusão manual."
-              : "Troque o filtro de status ou a aba para ver os outros objetos."
+              : "Confira o termo, troque o filtro de status ou a aba para ver os outros objetos."
           }
         />
       ) : (
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        <div className="flex gap-6">
           <div className="flex min-w-0 flex-1 flex-col gap-7">
             {secoes.map((secao) => (
               <section key={secao.chave}>
@@ -389,6 +550,35 @@ export default function PaginaRastreio() {
                       marcado={marcados.has(pedido.id)}
                       modoSelecao={selecionando}
                       aoClicar={() => abrirOuFechar(pedido.id)}
+                      aoMarcar={
+                        aba === "arquivados"
+                          ? (marcar) => alternarMarca(pedido.id, marcar)
+                          : undefined
+                      }
+                      acoes={
+                        aba === "arquivados" ? (
+                          <>
+                            <Botao
+                              variante="secundaria"
+                              tamanho="sm"
+                              onClick={() => arquivarUm(pedido.id, true)}
+                            >
+                              <Icone nome="desarquivar" size={14} />
+                              Desarquivar
+                            </Botao>
+                            {podeApagarRastreio && (
+                              <Botao
+                                variante="perigo"
+                                tamanho="sm"
+                                onClick={() => setConfirmacao({ operacao: "apagar", ids: [pedido.id] })}
+                              >
+                                <Icone nome="excluir" size={14} />
+                                Apagar
+                              </Botao>
+                            )}
+                          </>
+                        ) : undefined
+                      }
                     />
                   ))}
                 </div>
@@ -396,29 +586,58 @@ export default function PaginaRastreio() {
             ))}
           </div>
 
-          {aberto && (
-            <div className="w-full shrink-0 lg:w-[400px]">
-              <PainelRastreio
-                pedido={aberto}
-                aoFechar={() => setAbertoId(null)}
-                aoArquivar={arquivarUm}
-              />
-            </div>
+          {/* Desktop: coluna presa à tela, com rolagem própria. Clicar num item
+              no fim da lista mostra o painel sem rolar a página. */}
+          {telaLarga && aberto && (
+            <aside
+              key={aberto.id}
+              className="sticky top-24 max-h-[calc(100dvh-7rem)] w-[400px] shrink-0 self-start overflow-y-auto overscroll-contain rounded-[var(--radius-card)] border border-border bg-surface-1 p-5"
+            >
+              {painel}
+            </aside>
           )}
         </div>
       )}
 
+      {/* Celular e tablet: o mesmo painel numa gaveta, com botão de fechar. */}
+      <Gaveta
+        open={!telaLarga && aberto !== null}
+        onOpenChange={(aberta) => !aberta && setAbertoId(null)}
+      >
+        <GavetaConteudo larguraMaxima="sm:max-w-md">
+          <GavetaTitulo className="sr-only">
+            Rastreio {aberto?.rastreio.codigo}
+          </GavetaTitulo>
+          <GavetaDescricao className="sr-only">
+            Detalhe do objeto e histórico de eventos
+          </GavetaDescricao>
+          <div
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5"
+            style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
+          >
+            {painel}
+          </div>
+        </GavetaConteudo>
+      </Gaveta>
+
       <ModalConfirmacao
-        aberto={confirmando}
-        titulo={`${rotuloLote} pedidos`}
-        mensagem={`${marcados.size} pedido(s) vão para ${aba === "transito" ? "Arquivados" : "Em Trânsito"}. A ação é reversível.`}
+        aberto={confirmacao !== null}
+        titulo={textos?.titulo ?? ""}
+        mensagem={textos?.mensagem ?? ""}
         itens={todos
-          .filter((p) => marcados.has(p.id))
+          .filter((p) => confirmacao?.ids.includes(p.id))
           .map((p) => `${p.rastreio.codigo}  —  ${p.cliente.nome || "sem nome"}`)}
-        rotuloConfirmar={rotuloLote}
-        icone={aba === "transito" ? "arquivar" : "desarquivar"}
-        aoConfirmar={confirmarArquivamento}
-        aoCancelar={() => setConfirmando(false)}
+        rotuloConfirmar={textos?.rotulo}
+        icone={
+          confirmacao?.operacao === "apagar"
+            ? "excluir"
+            : confirmacao?.operacao === "desarquivar"
+              ? "desarquivar"
+              : "arquivar"
+        }
+        perigo={confirmacao?.operacao === "apagar"}
+        aoConfirmar={confirmar}
+        aoCancelar={() => setConfirmacao(null)}
       />
     </div>
   );

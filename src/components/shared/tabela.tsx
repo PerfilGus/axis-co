@@ -4,7 +4,6 @@ import { useMemo, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Selecao,
   SelecaoConteudo,
@@ -12,6 +11,7 @@ import {
   SelecaoItem,
   SelecaoValor,
 } from "@/components/ui/select";
+import { CampoBusca } from "./campo-busca";
 import { EstadoVazio } from "./estado-vazio";
 
 export interface ColunaTabela<T> {
@@ -133,19 +133,7 @@ export function Tabela<T extends { id: string }>({
       {(buscarEm || filtros.length > 0 || acoes) && (
         <div className="flex flex-wrap items-center gap-2">
           {buscarEm && (
-            <div className="relative min-w-52 flex-1 sm:max-w-72">
-              <Icone
-                nome="busca"
-                size={15}
-                className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-muted-fg"
-              />
-              <Input
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-                placeholder={placeholderBusca}
-                className="rounded-full pl-9"
-              />
-            </div>
+            <CampoBusca valor={busca} aoMudar={setBusca} placeholder={placeholderBusca} />
           )}
 
           {filtros.map((filtro) => (

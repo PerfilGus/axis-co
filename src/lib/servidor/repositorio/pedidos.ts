@@ -4,6 +4,8 @@ import type { Anexo, EventoPedido, ID, Pedido, TipoEventoPedido } from "@/lib/ty
 import { db, type Transacao } from "../db";
 import { ajustes, anexos, atividades, clientes, pedidos } from "../schema";
 import { registrarAtividades, type NovaAtividade } from "../atividades";
+import { agoraISO } from "@/lib/iso";
+import { finalizadoEmApos } from "@/lib/retencao";
 
 /**
  * Leitura e gravação de pedidos.
@@ -29,6 +31,7 @@ function paraAnexo(linha: typeof anexos.$inferSelect): Anexo {
     criadoEm: linha.criadoEm,
     criadoPor: linha.criadoPor,
     url: urlDoAnexo(linha.id),
+    removidoEm: linha.removidoEm,
   };
 }
 
@@ -163,7 +166,7 @@ function diferencas(antes: Pedido | null, depois: Pedido) {
 /**
  * Grava o pedido e o que mudou nele: cliente, ajustes e os eventos novos da
  * linha do tempo, que viram atividades. Anexos são gravados por quem sobe o
- * arquivo (`anexos.ts`).
+ * arquivo (`anexos.ts`). `finalizadoEm` sai do status, nunca de quem chama.
  */
 export async function gravarPedido(
   tx: Transacao,
@@ -171,9 +174,11 @@ export async function gravarPedido(
   depois: Omit<Pedido, "codigo"> & { codigo?: string },
   papel: string,
 ): Promise<number> {
-  const { cliente, ajustes: listaAjustes, anexos: _anexos, linhaDoTempo, codigo: _codigo, ...linha } = depois;
+  const { cliente, ajustes: listaAjustes, anexos: _anexos, linhaDoTempo, codigo: _codigo, ...campos } = depois;
   void _anexos;
   void _codigo;
+  // A contagem da retenção é invariante de gravação: nenhuma ação a decide.
+  const linha = { ...campos, finalizadoEm: finalizadoEmApos(antes, depois, agoraISO()) };
 
   await tx
     .insert(clientes)

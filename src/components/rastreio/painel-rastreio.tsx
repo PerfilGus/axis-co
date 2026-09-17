@@ -32,18 +32,21 @@ function Campo({ rotulo, valor }: { rotulo: string; valor: React.ReactNode }) {
 }
 
 /**
- * Painel de detalhe do rastreio, portado do `renderPanel()` do axis-tracking
- * (INVENTARIO.md §7). Coluna à direita, com a lista sempre visível ao lado —
- * não é navegação entre telas.
+ * Conteúdo do painel de detalhe do rastreio, portado do `renderPanel()` do
+ * axis-tracking (INVENTARIO.md §7). Quem o envolve é a página: coluna fixa com
+ * rolagem própria no desktop, gaveta no celular.
  */
 export function PainelRastreio({
   pedido,
   aoFechar,
   aoArquivar,
+  aoApagar,
 }: {
   pedido: PedidoRastreado;
   aoFechar: () => void;
   aoArquivar: () => void;
+  /** Só para arquivado e para quem pode apagar. */
+  aoApagar?: () => void;
 }) {
   const { rastreio } = pedido;
   const def = STATUS_RASTREIO[rastreio.status];
@@ -62,7 +65,7 @@ export function PainelRastreio({
   }
 
   return (
-    <aside className="flex max-h-[calc(100dvh-7rem)] flex-col overflow-y-auto rounded-[var(--radius-card)] border border-border bg-surface-1 p-5 lg:sticky lg:top-24">
+    <div className="flex flex-col">
       <div className="flex items-start gap-3">
         <span
           className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-input)]"
@@ -275,18 +278,26 @@ export function PainelRastreio({
       {/* Arquivar por engano custa dinheiro: perde-se o acompanhamento de um
           pedido que ainda pode precisar de cobrança. Por isso o botão fica
           vermelho no hover. Desarquivar não tem risco e não recebe o alerta. */}
-      <button
-        onClick={aoArquivar}
-        className={cn(
-          "mt-6 flex w-full items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-[13px] font-medium transition-colors",
-          rastreio.arquivado
-            ? "border-border text-fg hover:bg-surface-3"
-            : "border-border text-fg hover:border-[var(--st-vermelho-fg)] hover:bg-[var(--st-vermelho-bg)] hover:text-[var(--st-vermelho-fg)]",
+      <div className="mt-6 flex gap-2">
+        <button
+          onClick={aoArquivar}
+          className={cn(
+            "flex flex-1 items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-[13px] font-medium transition-colors",
+            rastreio.arquivado
+              ? "border-border text-fg hover:bg-surface-3"
+              : "border-border text-fg hover:border-[var(--st-vermelho-fg)] hover:bg-[var(--st-vermelho-bg)] hover:text-[var(--st-vermelho-fg)]",
+          )}
+        >
+          <Icone nome={rastreio.arquivado ? "desarquivar" : "arquivar"} size={15} />
+          {rastreio.arquivado ? "Desarquivar" : "Arquivar"}
+        </button>
+        {rastreio.arquivado && aoApagar && (
+          <Botao variante="perigo" className="h-auto flex-1 py-2.5 text-[13px]" onClick={aoApagar}>
+            <Icone nome="excluir" size={15} />
+            Apagar
+          </Botao>
         )}
-      >
-        <Icone nome={rastreio.arquivado ? "desarquivar" : "arquivar"} size={15} />
-        {rastreio.arquivado ? "Desarquivar" : "Arquivar"}
-      </button>
-    </aside>
+      </div>
+    </div>
   );
 }

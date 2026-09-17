@@ -53,11 +53,14 @@ export async function lerArquivo(caminho: string) {
   return get(caminho, { access: "private" });
 }
 
-export async function apagarArquivos(caminhos: string[]): Promise<void> {
-  if (caminhos.length === 0) return;
+/** Devolve se o Blob confirmou; quem precisa marcar a remoção confere. */
+export async function apagarArquivos(caminhos: string[]): Promise<boolean> {
+  if (caminhos.length === 0) return true;
   try {
     await del(caminhos);
+    return true;
   } catch (erro) {
     console.error("[arquivos] falha ao apagar", erro);
+    return false;
   }
 }

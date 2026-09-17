@@ -61,6 +61,10 @@ interface ContextoPedidos {
   /* --- rastreio (portado do axis-tracking) --- */
   /** Arquiva ou desarquiva. É manual e reversível: nada some sozinho. */
   arquivarRastreio: (ids: ID[], arquivar: boolean) => Promise<number | null>;
+  /** Tira arquivados da aba Rastreio, sem tocar no pedido. Só Admin. */
+  apagarRastreio: (ids: ID[]) => Promise<number | null>;
+  /** Ids dos rastreios cujo telefone completo contém os dígitos. */
+  buscarPorTelefone: (termo: string) => Promise<ID[] | null>;
   /** Abrir o pedido consome o destaque daquele rastreio. */
   limparDestaque: (pedidoId: ID) => void;
   /** Zera o destaque de todos de uma vez, sem abrir um por um. */
@@ -204,6 +208,19 @@ export function PedidosProvider({ inicial, children }: { inicial: Pedido[]; chil
     [aplicar],
   );
 
+  const apagarRastreio = useCallback<ContextoPedidos["apagarRastreio"]>(
+    async (ids) => {
+      const apagados = aplicar(await chamar(acoes.apagarRastreios(ids)));
+      return apagados ? apagados.length : null;
+    },
+    [aplicar],
+  );
+
+  const buscarPorTelefone = useCallback<ContextoPedidos["buscarPorTelefone"]>(
+    (termo) => chamar(acoes.buscarRastreiosPorTelefone(termo)),
+    [],
+  );
+
   /** Tira o destaque na hora e grava em segundo plano: é só uma marca de leitura. */
   const tirarDestaque = useCallback((ids: ID[] | null) => {
     setPedidos((atual) =>
@@ -239,6 +256,8 @@ export function PedidosProvider({ inicial, children }: { inicial: Pedido[]; chil
       excluir,
       revelarDados,
       arquivarRastreio,
+      apagarRastreio,
+      buscarPorTelefone,
       limparDestaque,
       redefinirDestaques,
       atualizarRastreios,
@@ -257,6 +276,8 @@ export function PedidosProvider({ inicial, children }: { inicial: Pedido[]; chil
       excluir,
       revelarDados,
       arquivarRastreio,
+      apagarRastreio,
+      buscarPorTelefone,
       limparDestaque,
       redefinirDestaques,
       atualizarRastreios,

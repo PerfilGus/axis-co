@@ -8,6 +8,13 @@
       "when": 1789606803742,
       "tag": "0000_inicial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789626670217,
+      "tag": "0001_rastreio_e_retencao",
+      "breakpoints": true
     }
   ]
 }

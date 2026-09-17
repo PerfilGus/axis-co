@@ -15,7 +15,8 @@ import { auth } from "@/lib/servidor/auth";
  * sessão e permissão de novo no servidor.
  */
 
-const PUBLICAS = ["/entrar", "/privacidade", "/api/auth"];
+/** `/api/cron` não tem sessão: a própria rota confere o `CRON_SECRET`. */
+const PUBLICAS = ["/entrar", "/privacidade", "/api/auth", "/api/cron"];
 /** Exigem sessão, mas valem para qualquer perfil. */
 const LIVRES_COM_SESSAO = ["/", "/primeiro-acesso", "/api/anexos"];
 

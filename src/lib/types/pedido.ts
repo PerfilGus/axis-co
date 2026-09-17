@@ -146,6 +146,11 @@ export interface Pedido {
   autorizadoPor: ID | null;
 
   rastreio: Rastreio | null;
+  /**
+   * O Admin apagou o rastreio da aba Rastreio. Só tira o objeto daquela lista
+   * e das sincronizações: o pedido e o código de rastreio continuam intactos.
+   */
+  rastreioRemovidoEm: DataISO | null;
   cobranca: Cobranca;
   custos: CustosPedido;
 
@@ -166,4 +171,10 @@ export interface Pedido {
   observacoes: string | null;
   fonte: Fonte;
   atualizadoEm: DataISO;
+  /**
+   * Quando o pedido entrou no status que o encerra para a retenção de
+   * arquivos (`lib/retencao.ts`). Carimbado pelo servidor ao gravar; volta a
+   * nulo se o status sair da lista.
+   */
+  finalizadoEm: DataISO | null;
 }

@@ -95,7 +95,10 @@ export async function executar<T>(fn: () => Promise<T>): Promise<Resultado<T>> {
       const primeiro = erro.issues[0];
       return { ok: false, erro: primeiro?.message ?? "Dados inválidos." };
     }
-    console.error("[acao]", erro);
+    // Só a identificação: o erro inteiro do Postgres leva os valores da
+    // consulta — dado de cliente — para os logs.
+    const e = erro as { name?: string; message?: string; code?: string; stack?: string };
+    console.error("[acao]", `${e.name ?? "Erro"}: ${e.message ?? "sem mensagem"}`, e.code ?? "", e.stack ?? "");
     return { ok: false, erro: "Não foi possível concluir. Tente de novo." };
   }
 }

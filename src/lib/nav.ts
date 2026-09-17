@@ -278,7 +278,8 @@ export function podeAcessar(perfil: Perfil, pathname: string): boolean {
     ...GRUPOS_POR_PERFIL[perfil].flatMap((g) => [g.href, ...g.itens.map((i) => i.href)]),
     ...CONFIG_POR_PERFIL[perfil].map((i) => i.href),
   ];
-  return permitidas.some((href) => pathname.startsWith(href));
+  // Compara por segmento: `/minha-area-x` não é `/minha-area`.
+  return permitidas.some((href) => pathname === href || pathname.startsWith(`${href}/`));
 }
 
 const GRUPO_PERFIL: GrupoNav = {

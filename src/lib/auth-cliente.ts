@@ -1,11 +1,14 @@
 "use client";
 
 import { createAuthClient } from "better-auth/react";
-import { adminClient, twoFactorClient } from "better-auth/client/plugins";
+import { twoFactorClient } from "better-auth/client/plugins";
 
-/** Cliente de autenticação do navegador. Fala com `/api/auth`. */
+/**
+ * Cliente de autenticação do navegador. Fala com `/api/auth`. Sem o plugin
+ * admin: criar e alterar usuário é sempre server action, nunca o navegador.
+ */
 export const authCliente = createAuthClient({
-  plugins: [adminClient(), twoFactorClient()],
+  plugins: [twoFactorClient()],
 });
 
 /** Mensagens do Better Auth em português, para o que a tela mostra. */

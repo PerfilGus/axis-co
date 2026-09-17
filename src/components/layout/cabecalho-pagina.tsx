@@ -112,7 +112,9 @@ export function CabecalhoPagina({
           )
         )}
 
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
+        {/* No celular o título ocupa a linha toda e a ação desce: sem isso um
+            botão comprido como "Atualizar rastreios" corta o título. */}
+        <div className="flex min-w-0 flex-1 basis-[60%] flex-col gap-1 sm:basis-0">
           <h1 className="truncate text-[26px] leading-tight font-medium tracking-tight sm:text-[30px]">
             {titulo}
           </h1>

@@ -86,6 +86,12 @@ export const podeVerDadosCliente = (u: Pick<Colaborador, "perfil">) =>
 /** Anexos de pedido seguem a mesma regra de quem vê os dados do cliente. */
 export const podeVerAnexo = podeVerDadosCliente;
 
+/**
+ * Quantos clientes um perfil não-admin revela numa chamada. O detalhe abre um
+ * pedido por vez; a exportação da base é do Admin.
+ */
+export const LIMITE_REVELACAO = 50;
+
 export const PERFIS: Perfil[] = ["admin", "vendedor", "cobrador"];
 
 export const ROTULO_PERFIL: Record<Perfil, string> = {

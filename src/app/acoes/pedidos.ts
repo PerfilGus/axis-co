@@ -14,6 +14,8 @@ import {
   podeApagarRastreio,
   podeAutorizarEnvio,
   podeCancelarPedido,
+  ehAdmin,
+  LIMITE_REVELACAO,
   podeCobrarPedido,
   podeCriarPedido,
   podeEditarPedido,
@@ -227,7 +229,15 @@ export async function revelarDadosCliente(
   return executar(async () => {
     const ctx = await exigirUsuario();
     exigir(podeVerDadosCliente(ctx.colaborador));
-    const ids = z.array(schemaId).min(1).max(5000).parse(pedidoIds);
+    const tipo = z.enum(["detalhe", "exportacao"]).parse(motivo);
+    // Baixar a base inteira é do Admin; os demais abrem um pedido por vez.
+    if (tipo !== "detalhe") exigir(podeOperarRastreio(ctx.colaborador), "Só o Admin exporta dados de clientes.");
+    const teto = ehAdmin(ctx.colaborador) ? 5000 : LIMITE_REVELACAO;
+    const ids = z
+      .array(schemaId)
+      .min(1)
+      .max(teto, "São clientes demais de uma vez. Abra pelo detalhe do pedido.")
+      .parse(pedidoIds);
 
     const linhas = await db
       .select({ pedidoId: t.pedidos.id, clienteId: t.clientes.id, telefone: t.clientes.telefone, cpf: t.clientes.cpf })
@@ -236,7 +246,7 @@ export async function revelarDadosCliente(
       .where(inArray(t.pedidos.id, ids));
 
     await registrarAtividades(
-      motivo === "exportacao"
+      tipo === "exportacao"
         ? [
             {
               usuarioId: ctx.colaborador.id,

@@ -20,6 +20,12 @@ import { auth } from "@/lib/servidor/auth";
  * precisa carregar mesmo com a sessão vencida, para o aparelho seguir recebendo push.
  */
 const PUBLICAS = ["/entrar", "/privacidade", "/api/auth", "/api/cron", "/sw.js"];
+/**
+ * Endpoints administrativos do Better Auth (criar usuário, trocar papel,
+ * personificar). O sistema só os usa pelo servidor, em server action, então a
+ * porta HTTP não precisa existir.
+ */
+const FECHADAS = ["/api/auth/admin"];
 /** Exigem sessão, mas valem para qualquer perfil. */
 const LIVRES_COM_SESSAO = ["/", "/primeiro-acesso", "/api/anexos", "/api/notificacoes"];
 
@@ -74,6 +80,9 @@ export async function proxy(request: NextRequest) {
   cabecalhos.set("Content-Security-Policy", csp);
   const seguir = () => comSeguranca(NextResponse.next({ request: { headers: cabecalhos } }), csp);
 
+  if (comecaCom(pathname, FECHADAS)) {
+    return comSeguranca(NextResponse.json({ erro: "Não encontrado" }, { status: 404 }), csp);
+  }
   if (comecaCom(pathname, PUBLICAS)) return seguir();
 
   const sessao = await auth.api.getSession({ headers: request.headers });

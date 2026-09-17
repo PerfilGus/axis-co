@@ -259,10 +259,14 @@ export function itemDaRota(perfil: Perfil, pathname: string): ItemNav | null {
   );
 }
 
+/** Paleta, badges e seletor de cor. Só admin, fora do menu: abre pela Aparência. */
+export const HREF_DESIGN = "/design";
+
 /** O perfil enxerga esta rota? Usado para barrar acesso direto pela URL. */
 export function podeAcessar(perfil: Perfil, pathname: string): boolean {
   if (pathname === "/" ) return true;
   const permitidas = [
+    ...(perfil === "admin" ? [HREF_DESIGN] : []),
     ...GRUPOS_POR_PERFIL[perfil].flatMap((g) => [g.href, ...g.itens.map((i) => i.href)]),
     ...CONFIG_POR_PERFIL[perfil].map((i) => i.href),
   ];

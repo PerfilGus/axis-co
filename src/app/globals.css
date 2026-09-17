@@ -88,6 +88,38 @@
 }
 
 /* ---------------------------------------------------------------
+   Paleta Axis — 8 famílias, 4 papéis cada. Fonte: lib/cores.ts.
+   O nome é o papel, não o valor: no tema claro cada papel troca de
+   tom para manter o contraste, e o componente não muda.
+     vibrante  ícones, destaques e gráficos
+     pastel    texto de badge (sobre o escuro)
+     escuro    preenchimento de badge e card
+     claro     texto de alto contraste e realces raros
+   --------------------------------------------------------------- */
+:root,
+[data-theme="dark"] {
+  --cor-amarelo-vibrante: #ffbe00;  --cor-amarelo-pastel: #ffdf80;  --cor-amarelo-escuro: #5e4700;  --cor-amarelo-claro: #fff0c2;
+  --cor-laranja-vibrante: #f88f22;  --cor-laranja-pastel: #fbc28c;  --cor-laranja-escuro: #6e3c0a;  --cor-laranja-claro: #ffe3b3;
+  --cor-vermelho-vibrante: #ff6766; --cor-vermelho-pastel: #ffb0b0; --cor-vermelho-escuro: #7a2232; --cor-vermelho-claro: #ffe1e1;
+  --cor-vinho-vibrante: #d65b8c;    --cor-vinho-pastel: #e8a9c2;    --cor-vinho-escuro: #62294a;    --cor-vinho-claro: #f7e0ea;
+  --cor-roxo-vibrante: #a375e6;     --cor-roxo-pastel: #c9b3ec;     --cor-roxo-escuro: #4d3170;     --cor-roxo-claro: #ece3f8;
+  --cor-azul-vibrante: #5b8fd9;     --cor-azul-pastel: #afc8ee;     --cor-azul-escuro: #25476f;     --cor-azul-claro: #e1ebf8;
+  --cor-verde-vibrante: #6ee787;    --cor-verde-pastel: #b3efc2;    --cor-verde-escuro: #1a5530;    --cor-verde-claro: #e0f4e7;
+  --cor-neutro-vibrante: #a9a9a7;   --cor-neutro-pastel: #cfcfcd;   --cor-neutro-escuro: #3a3a38;   --cor-neutro-claro: #eaeaea;
+}
+
+[data-theme="light"] {
+  --cor-amarelo-vibrante: #a87a00;  --cor-amarelo-pastel: #6b5000;  --cor-amarelo-escuro: #fbe3a0;  --cor-amarelo-claro: #3d2e00;
+  --cor-laranja-vibrante: #c0600c;  --cor-laranja-pastel: #8a420a;  --cor-laranja-escuro: #fbd6b0;  --cor-laranja-claro: #4a2605;
+  --cor-vermelho-vibrante: #d23a3a; --cor-vermelho-pastel: #9a2230; --cor-vermelho-escuro: #f8cfcf; --cor-vermelho-claro: #561320;
+  --cor-vinho-vibrante: #b03b6b;    --cor-vinho-pastel: #842a52;    --cor-vinho-escuro: #f2d0df;    --cor-vinho-claro: #4a1830;
+  --cor-roxo-vibrante: #7b4dc8;     --cor-roxo-pastel: #5b3a98;     --cor-roxo-escuro: #e1d4f5;     --cor-roxo-claro: #321e58;
+  --cor-azul-vibrante: #3469ba;     --cor-azul-pastel: #244f8c;     --cor-azul-escuro: #d0dff4;     --cor-azul-claro: #142e4f;
+  --cor-verde-vibrante: #23904a;    --cor-verde-pastel: #1b6638;    --cor-verde-escuro: #cbebd5;    --cor-verde-claro: #0e3b21;
+  --cor-neutro-vibrante: #6e6e6b;   --cor-neutro-pastel: #4c4c4a;   --cor-neutro-escuro: #d6d6d2;   --cor-neutro-claro: #1e1e1c;
+}
+
+/* ---------------------------------------------------------------
    Paleta de destaque (8 opções). Amarelo é o padrão.
    O texto sobre o destaque é sempre escuro.
    --------------------------------------------------------------- */
@@ -116,6 +148,24 @@
   --color-accent: var(--accent);
   --color-accent-fg: var(--accent-fg);
   --color-accent-soft: var(--accent-soft);
+
+  /* paleta: text-roxo-pastel, bg-roxo-escuro, fill-verde-vibrante… */
+  --color-amarelo-vibrante: var(--cor-amarelo-vibrante);   --color-amarelo-pastel: var(--cor-amarelo-pastel);
+  --color-amarelo-escuro: var(--cor-amarelo-escuro);       --color-amarelo-claro: var(--cor-amarelo-claro);
+  --color-laranja-vibrante: var(--cor-laranja-vibrante);   --color-laranja-pastel: var(--cor-laranja-pastel);
+  --color-laranja-escuro: var(--cor-laranja-escuro);       --color-laranja-claro: var(--cor-laranja-claro);
+  --color-vermelho-vibrante: var(--cor-vermelho-vibrante); --color-vermelho-pastel: var(--cor-vermelho-pastel);
+  --color-vermelho-escuro: var(--cor-vermelho-escuro);     --color-vermelho-claro: var(--cor-vermelho-claro);
+  --color-vinho-vibrante: var(--cor-vinho-vibrante);       --color-vinho-pastel: var(--cor-vinho-pastel);
+  --color-vinho-escuro: var(--cor-vinho-escuro);           --color-vinho-claro: var(--cor-vinho-claro);
+  --color-roxo-vibrante: var(--cor-roxo-vibrante);         --color-roxo-pastel: var(--cor-roxo-pastel);
+  --color-roxo-escuro: var(--cor-roxo-escuro);             --color-roxo-claro: var(--cor-roxo-claro);
+  --color-azul-vibrante: var(--cor-azul-vibrante);         --color-azul-pastel: var(--cor-azul-pastel);
+  --color-azul-escuro: var(--cor-azul-escuro);             --color-azul-claro: var(--cor-azul-claro);
+  --color-verde-vibrante: var(--cor-verde-vibrante);       --color-verde-pastel: var(--cor-verde-pastel);
+  --color-verde-escuro: var(--cor-verde-escuro);           --color-verde-claro: var(--cor-verde-claro);
+  --color-neutro-vibrante: var(--cor-neutro-vibrante);     --color-neutro-pastel: var(--cor-neutro-pastel);
+  --color-neutro-escuro: var(--cor-neutro-escuro);         --color-neutro-claro: var(--cor-neutro-claro);
 
   --font-sans: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
 

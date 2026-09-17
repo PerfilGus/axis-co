@@ -8,6 +8,46 @@ import {
   type TomStatus,
 } from "@/lib/status";
 import type { Fonte, StatusPedido, StatusRastreio } from "@/lib/types";
+import { cor, type Familia } from "@/lib/cores";
+import { Icone, type NomeIcone } from "@/components/icone";
+
+/**
+ * Selo da paleta nova: sempre ícone e rótulo, nunca só cor. O fundo é o tom
+ * escuro da família (padrão) ou o vibrante em baixa opacidade; o texto e o
+ * ícone, o pastel. Nunca um bloco saturado.
+ */
+export function SeloFamilia({
+  familia,
+  icone,
+  children,
+  fundo = "escuro",
+  className,
+}: {
+  familia: Familia;
+  icone: NomeIcone;
+  children: React.ReactNode;
+  fundo?: "escuro" | "transparente";
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-6 items-center gap-1.5 rounded-full pr-2.5 pl-2 text-xs font-medium whitespace-nowrap",
+        className,
+      )}
+      style={{
+        color: cor(familia, "pastel"),
+        backgroundColor:
+          fundo === "escuro"
+            ? cor(familia, "escuro")
+            : `color-mix(in srgb, ${cor(familia, "vibrante")} 16%, transparent)`,
+      }}
+    >
+      <Icone nome={icone} size={13} className="shrink-0" />
+      {children}
+    </span>
+  );
+}
 
 /**
  * Selo de status. As cores são fixas e nunca acompanham o destaque escolhido

@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useSessao } from "@/lib/providers/sessao";
+import { HREF_DESIGN } from "@/lib/nav";
 import { Icone } from "@/components/icone";
 import { CabecalhoPagina } from "@/components/layout/cabecalho-pagina";
 import { Card, CardConteudo, CardDescricao, CardTitulo } from "@/components/ui/card";
@@ -13,13 +15,23 @@ import { toast } from "@/components/ui/toast";
 import { SeletorDestaque, SeletorTema } from "@/components/shared/seletores-aparencia";
 
 export default function PaginaAparencia() {
-  const { usuario } = useSessao();
+  const { usuario, perfil } = useSessao();
 
   return (
     <div className="flex flex-col gap-6">
       <CabecalhoPagina
         titulo="Aparência"
         descricao="Sua escolha vale só para você, na web e no aplicativo."
+        extras={
+          perfil === "admin" ? (
+            <Botao variante="secundaria" asChild>
+              <Link href={HREF_DESIGN}>
+                <Icone nome="aparencia" size={16} />
+                Paleta e componentes
+              </Link>
+            </Botao>
+          ) : undefined
+        }
       />
 
       <div className="grid gap-4 lg:grid-cols-2">

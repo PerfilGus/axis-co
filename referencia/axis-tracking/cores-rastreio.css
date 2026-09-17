@@ -1,0 +1,38 @@
+/* ===================================================================
+   BACKUP — cores originais dos status de rastreio (axis-tracking)
+
+   Guardado na Fase 4, antes de a aba Rastreio passar para a paleta
+   nova (lib/cores.ts). Para voltar ("retorne as cores do rastreio"):
+
+   1. Colar os dois blocos abaixo em src/app/globals.css (as variáveis
+      --rt-* do tema escuro e do claro).
+   2. `coresRastreio(status)` em src/lib/status.ts volta a devolver
+      { base: var(--rt-{status}-base), texto: var(--rt-{status}-text) }.
+   3. Opacidades do original, via `corComOpacidade(base, alfa)`:
+      0.15 card destacado · 0.18 fundo de badge · 0.40 borda de badge ·
+      0.08 bloco de alerta · 0.35 borda do bloco · 0.50 ponto da linha do tempo.
+      Em src/lib/rastreio/lista.ts a cor da seção é var(--rt-{status}-base).
+   4. O badge original (SeloStatusRastreio) tinha borda e não tinha ícone.
+   =================================================================== */
+
+:root,
+[data-theme="dark"] {
+  --rt-aguardando_postagem-base: #6e6e7a;  --rt-aguardando_postagem-text: #adadb8;
+  --rt-postado-base: #8a8a94;              --rt-postado-text: #c4c4cd;
+  --rt-em_transferencia-base: #4a90f2;     --rt-em_transferencia-text: #8ab8ff;
+  --rt-saiu_para_entrega-base: #f2994a;    --rt-saiu_para_entrega-text: #ffbf80;
+  --rt-entregue-base: #3fb968;             --rt-entregue-text: #7ee0a0;
+  --rt-aguardando_retirada-base: #9b7bf0;  --rt-aguardando_retirada-text: #c3aefc;
+  --rt-falha-base: #e5484d;                --rt-falha-text: #ff9d9f;
+}
+
+/* O axis-tracking é só escuro. Mesma matiz, escurecida para o fundo claro. */
+[data-theme="light"] {
+  --rt-aguardando_postagem-base: #6e6e7a;  --rt-aguardando_postagem-text: #55555f;
+  --rt-postado-base: #7a7a84;              --rt-postado-text: #5c5c66;
+  --rt-em_transferencia-base: #2f6fd0;     --rt-em_transferencia-text: #2a5ea8;
+  --rt-saiu_para_entrega-base: #d97b28;    --rt-saiu_para_entrega-text: #a85c18;
+  --rt-entregue-base: #2f9a52;             --rt-entregue-text: #24793f;
+  --rt-aguardando_retirada-base: #7a55d6;  --rt-aguardando_retirada-text: #5f3fb0;
+  --rt-falha-base: #cf3238;                --rt-falha-text: #a3272c;
+}

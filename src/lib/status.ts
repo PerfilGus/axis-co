@@ -3,6 +3,7 @@ import type { StatusRastreio } from "@/lib/types/rastreio";
 import type { NomeIcone } from "@/components/icone";
 import type { CategoriaDespesa } from "@/lib/types/financeiro";
 import type { BonusNivel, PagamentoColaborador } from "@/lib/types/equipe";
+import type { Familia } from "@/lib/cores";
 
 /**
  * Tons de status. São fixos e vêm do axis-tracking: o destaque escolhido pelo
@@ -34,6 +35,10 @@ export function estiloDoTom(tom: TomStatus): EstiloStatus {
 interface DefinicaoStatus<T extends string> {
   rotulo: string;
   tom: TomStatus;
+  /** Família da paleta nova. Fixa: nunca acompanha o destaque. */
+  familia: Familia;
+  /** Status sempre aparece com ícone e rótulo, nunca só com cor. */
+  icone: NomeIcone;
   descricao: string;
   ordem: number;
   chave: T;
@@ -44,6 +49,8 @@ export const STATUS_PEDIDO: Record<StatusPedido, DefinicaoStatus<StatusPedido>> 
     chave: "agendado",
     rotulo: "Agendado",
     tom: "ardosia",
+    familia: "amarelo",
+    icone: "calendario",
     descricao: "Pedido tirado pelo vendedor, ainda sem envio.",
     ordem: 1,
   },
@@ -51,6 +58,8 @@ export const STATUS_PEDIDO: Record<StatusPedido, DefinicaoStatus<StatusPedido>> 
     chave: "aguardando_autorizacao",
     rotulo: "Aguardando autorização",
     tom: "bronze",
+    familia: "amarelo",
+    icone: "relogio",
     descricao: "Na fila do Admin para liberar o envio.",
     ordem: 2,
   },
@@ -58,6 +67,8 @@ export const STATUS_PEDIDO: Record<StatusPedido, DefinicaoStatus<StatusPedido>> 
     chave: "autorizado",
     rotulo: "Autorizado",
     tom: "turquesa",
+    familia: "neutro",
+    icone: "autorizar",
     descricao: "Envio liberado, com código de rastreio gerado.",
     ordem: 3,
   },
@@ -65,6 +76,8 @@ export const STATUS_PEDIDO: Record<StatusPedido, DefinicaoStatus<StatusPedido>> 
     chave: "em_transito",
     rotulo: "Em trânsito",
     tom: "azul",
+    familia: "azul",
+    icone: "rastreio",
     descricao: "Objeto postado e circulando nos Correios.",
     ordem: 4,
   },
@@ -72,6 +85,8 @@ export const STATUS_PEDIDO: Record<StatusPedido, DefinicaoStatus<StatusPedido>> 
     chave: "entregue",
     rotulo: "Entregue",
     tom: "verde",
+    familia: "verde",
+    icone: "checkCircle",
     descricao: "Entregue ao cliente, cobrança em aberto.",
     ordem: 5,
   },
@@ -79,6 +94,8 @@ export const STATUS_PEDIDO: Record<StatusPedido, DefinicaoStatus<StatusPedido>> 
     chave: "pago",
     rotulo: "Pago",
     tom: "esmeralda",
+    familia: "verde",
+    icone: "dinheiro",
     descricao: "Ciclo fechado: entregue e pago.",
     ordem: 6,
   },
@@ -86,6 +103,8 @@ export const STATUS_PEDIDO: Record<StatusPedido, DefinicaoStatus<StatusPedido>> 
     chave: "cancelado",
     rotulo: "Cancelado",
     tom: "cinza",
+    familia: "vinho",
+    icone: "proibido",
     descricao: "Cancelado antes de autorizar. Custo zero, conta como frustrado.",
     ordem: 7,
   },
@@ -93,6 +112,8 @@ export const STATUS_PEDIDO: Record<StatusPedido, DefinicaoStatus<StatusPedido>> 
     chave: "reembolsado",
     rotulo: "Reembolsado",
     tom: "rosa",
+    familia: "vermelho",
+    icone: "devolver",
     descricao: "Devolvido, recusado ou suspenso após o envio. Gera custo de frete.",
     ordem: 8,
   },
@@ -100,6 +121,8 @@ export const STATUS_PEDIDO: Record<StatusPedido, DefinicaoStatus<StatusPedido>> 
     chave: "inadimplente",
     rotulo: "Inadimplente",
     tom: "carmim",
+    familia: "vermelho",
+    icone: "alerta",
     descricao: "Entregue e não pago. Gera custo de frete e de pote.",
     ordem: 9,
   },
@@ -118,6 +141,8 @@ export interface DefinicaoRastreio {
   /** Título da seção onde o pedido cai na lista. */
   secao: string;
   icone: NomeIcone;
+  /** Família da paleta nova. As cores originais estão em referencia/axis-tracking/cores-rastreio.css. */
+  familia: Familia;
   descricao: string;
 }
 
@@ -127,6 +152,7 @@ export const STATUS_RASTREIO: Record<StatusRastreio, DefinicaoRastreio> = {
     rotulo: "Aguardando postagem",
     secao: "Aguardando postagem",
     icone: "etiqueta",
+    familia: "neutro",
     descricao: "Etiqueta emitida, objeto ainda não postado.",
   },
   postado: {
@@ -134,6 +160,7 @@ export const STATUS_RASTREIO: Record<StatusRastreio, DefinicaoRastreio> = {
     rotulo: "Postado",
     secao: "Postado",
     icone: "pedidos",
+    familia: "azul",
     descricao: "Primeiro evento registrado nos Correios.",
   },
   em_transferencia: {
@@ -141,6 +168,7 @@ export const STATUS_RASTREIO: Record<StatusRastreio, DefinicaoRastreio> = {
     rotulo: "Em transferência",
     secao: "Pedidos em Trânsito",
     icone: "transferencia",
+    familia: "azul",
     descricao: "Movimentação entre unidades.",
   },
   saiu_para_entrega: {
@@ -148,6 +176,7 @@ export const STATUS_RASTREIO: Record<StatusRastreio, DefinicaoRastreio> = {
     rotulo: "Saiu para entrega",
     secao: "Saiu para Entrega",
     icone: "rastreio",
+    familia: "laranja",
     descricao: "Rota de entrega final.",
   },
   entregue: {
@@ -155,6 +184,7 @@ export const STATUS_RASTREIO: Record<StatusRastreio, DefinicaoRastreio> = {
     rotulo: "Entregue",
     secao: "Pedidos Entregues",
     icone: "check",
+    familia: "verde",
     descricao: "Entrega confirmada.",
   },
   aguardando_retirada: {
@@ -162,6 +192,7 @@ export const STATUS_RASTREIO: Record<StatusRastreio, DefinicaoRastreio> = {
     rotulo: "Aguardando retirada",
     secao: "Aguardando Retirada",
     icone: "local",
+    familia: "roxo",
     descricao: "Disponível em agência.",
   },
   falha: {
@@ -169,6 +200,7 @@ export const STATUS_RASTREIO: Record<StatusRastreio, DefinicaoRastreio> = {
     rotulo: "Falha",
     secao: "Falha na Entrega",
     icone: "alerta",
+    familia: "vermelho",
     descricao: "Qualquer insucesso de entrega.",
   },
 };

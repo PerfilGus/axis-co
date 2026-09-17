@@ -178,9 +178,10 @@ export interface IconeProps {
   size?: number;
   weight?: "thin" | "light" | "regular" | "bold" | "fill" | "duotone";
   className?: string;
+  style?: React.CSSProperties;
 }
 
-export function Icone({ nome, size = 18, weight = "fill", className }: IconeProps) {
+export function Icone({ nome, size = 18, weight = "fill", className, style }: IconeProps) {
   const Componente = ICONES[nome];
-  return <Componente size={size} weight={weight} className={className} />;
+  return <Componente size={size} weight={weight} className={className} style={style} />;
 }

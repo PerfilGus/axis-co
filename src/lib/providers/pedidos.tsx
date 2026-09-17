@@ -8,654 +8,228 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type {
-  AjusteValor,
-  Anexo,
-  Centavos,
-  Cliente,
-  DataISO,
-  EventoPedido,
-  FormaPagamento,
-  ID,
-  Pedido,
-  StatusPedido,
-  TipoEventoPedido,
-} from "@/lib/types";
-import { formatBRL } from "@/lib/format";
-import { ROTULO_FORMA } from "@/lib/taxas";
-import { pendenciasDe } from "@/lib/checklist";
-import { avancarRastreio } from "@/lib/rastreio/simulacao";
-import { PEDIDOS } from "@/lib/mock/pedidos";
-import { custoPotesDoKit } from "@/lib/mock/catalogo";
-import { CRIATIVO_NAO_IDENTIFICADO } from "@/lib/mock/marketing";
-import { useCadastros } from "./cadastros";
+import type { AjusteValor, ID, Pedido, TipoAnexo } from "@/lib/types";
+import type { DadosPagamento, EdicaoPedido, RascunhoPedido } from "@/lib/dominio/pedidos";
+import * as acoes from "@/app/acoes/pedidos";
+import type { DadosSensiveis } from "@/app/acoes/pedidos";
+import { chamar } from "./acao";
+
+export type { DadosPagamento, EdicaoPedido, RascunhoPedido };
 
 /**
- * Estado dos pedidos durante a sessão.
+ * Pedidos da sessão.
  *
- * Nada é persistido: recarregar a página volta ao mock. Cada ação aqui é a
- * mutação que o backend vai expor depois — as telas não precisam saber a
- * diferença.
+ * O estado começa com o que o servidor mandou ao abrir o sistema (CPF e
+ * telefone já mascarados) e cada mudança passa por uma server action, que
+ * confere permissão, grava e devolve os pedidos atualizados. A tela nunca
+ * decide o estado final de um pedido.
  */
-
-export interface RascunhoPedido {
-  cliente: Omit<Cliente, "id" | "criadoEm">;
-  kitId: ID;
-  criativoId: string;
-  observacoes: string;
-  confirmacaoPorTexto: boolean;
-  /** Ajuste opcional pedido no fechamento. */
-  ajuste: { tipo: "desconto" | "acrescimo"; valor: Centavos; motivo: string } | null;
-  anexos: Array<Pick<Anexo, "nome" | "tipo" | "tamanhoBytes" | "mime">>;
-}
-
-export interface DadosPagamento {
-  valorRecebido: Centavos;
-  data: DataISO;
-  forma: Exclude<FormaPagamento, "nao_definido">;
-  bancoId: ID;
-  /** Calculada na tela com o cadastro do banco e a franquia em curso. */
-  taxaAplicada: Centavos;
-  observacoes: string | null;
-}
 
 export interface ResultadoAutorizacao {
   autorizados: Pedido[];
   bloqueados: Array<{ pedido: Pedido; motivo: string }>;
 }
 
+export interface ArquivosPedido {
+  print: File[];
+  audio: File[];
+}
+
 interface ContextoPedidos {
   pedidos: Pedido[];
-  criar: (rascunho: RascunhoPedido, vendedorId: ID) => Pedido;
-  autorizar: (ids: ID[], autorId: ID) => ResultadoAutorizacao;
-  cancelar: (ids: ID[], motivo: string, autorId: ID) => number;
+  criar: (rascunho: RascunhoPedido, arquivos: ArquivosPedido) => Promise<Pedido | null>;
+  editar: (pedidoId: ID, edicao: EdicaoPedido) => Promise<Pedido | null>;
+  anexar: (pedidoId: ID, tipo: TipoAnexo, arquivo: File) => Promise<Pedido | null>;
+  autorizar: (ids: ID[]) => Promise<ResultadoAutorizacao | null>;
+  cancelar: (ids: ID[], motivo: string) => Promise<number | null>;
   solicitarAjuste: (
     pedidoId: ID,
     entrada: Pick<AjusteValor, "tipo" | "valorSolicitado" | "motivo">,
-    solicitanteId: ID,
-  ) => void;
+  ) => Promise<boolean>;
   decidirAjuste: (
     pedidoId: ID,
     ajusteId: ID,
     decisao: "aprovado" | "recusado",
-    autorId: ID,
     observacao: string | null,
-  ) => void;
-  registrarPagamento: (pedidoId: ID, dados: DadosPagamento, autorId: ID) => void;
-  marcarInadimplente: (pedidoId: ID, autorId: ID) => void;
-  excluir: (pedidoId: ID) => void;
+  ) => Promise<boolean>;
+  registrarPagamento: (pedidoId: ID, dados: DadosPagamento) => Promise<boolean>;
+  marcarInadimplente: (pedidoId: ID) => Promise<boolean>;
+  excluir: (pedidoId: ID) => Promise<boolean>;
+  /** CPF e telefone completos. Cada chamada fica registrada nas atividades. */
+  revelarDados: (pedidoIds: ID[], motivo?: "detalhe" | "exportacao") => Promise<DadosSensiveis[] | null>;
 
   /* --- rastreio (portado do axis-tracking) --- */
   /** Arquiva ou desarquiva. É manual e reversível: nada some sozinho. */
-  arquivarRastreio: (ids: ID[], arquivar: boolean) => number;
+  arquivarRastreio: (ids: ID[], arquivar: boolean) => Promise<number | null>;
   /** Abrir o pedido consome o destaque daquele rastreio. */
   limparDestaque: (pedidoId: ID) => void;
   /** Zera o destaque de todos de uma vez, sem abrir um por um. */
   redefinirDestaques: () => void;
-  /** Atualização simulada dos rastreios; devolve quantos mudaram. */
-  atualizarRastreios: () => { atualizados: number; verificados: number };
+  /** Consulta os Correios; devolve quantos mudaram e se a integração respondeu. */
+  atualizarRastreios: () => Promise<{ atualizados: number; verificados: number; integrado: boolean } | null>;
 }
 
 const Contexto = createContext<ContextoPedidos | null>(null);
 
-/** Cobrador que assume o pedido assim que o envio é autorizado. */
-const COBRADOR_PADRAO = "col_0005";
-
-let sequencia = 9000;
-let proximoCodigo = 2500;
-function novoId(prefixo: string): string {
-  sequencia += 1;
-  return `${prefixo}_${sequencia}`;
+function mesclar(atual: Pedido[], novos: Pedido[]): Pedido[] {
+  const porId = new Map(novos.map((p) => [p.id, p]));
+  const existentes = new Set(atual.map((p) => p.id));
+  return [
+    ...novos.filter((p) => !existentes.has(p.id)),
+    ...atual.map((p) => porId.get(p.id) ?? p),
+  ];
 }
 
-function agora(): DataISO {
-  return new Date().toISOString();
-}
+export function PedidosProvider({ inicial, children }: { inicial: Pedido[]; children: ReactNode }) {
+  const [pedidos, setPedidos] = useState<Pedido[]>(inicial);
 
-function evento(
-  tipo: TipoEventoPedido,
-  titulo: string,
-  descricao: string | null,
-  autorId: ID | null,
-  extra: Partial<EventoPedido> = {},
-): EventoPedido {
-  return {
-    id: novoId("evt"),
-    tipo,
-    titulo,
-    descricao,
-    ocorridoEm: agora(),
-    autorId,
-    fonte: "manual",
-    ...extra,
-  };
-}
+  const aplicar = useCallback((novos: Pedido[] | null) => {
+    if (novos && novos.length > 0) setPedidos((atual) => mesclar(atual, novos));
+    return novos;
+  }, []);
 
-/** Código de rastreio simulado. A VendLiber devolve o de verdade depois. */
-function simularCodigoRastreio(): string {
-  const letras = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const l = () => letras[Math.floor(Math.random() * letras.length)];
-  const n = String(Math.floor(Math.random() * 900_000_000) + 100_000_000);
-  return `${l()}${l()}${n}BR`;
-}
-
-export function PedidosProvider({ children }: { children: ReactNode }) {
-  const [pedidos, setPedidos] = useState<Pedido[]>(PEDIDOS);
-  const { kits, produtos, linhas } = useCadastros();
-
-  const aplicar = useCallback(
-    (ids: ID[], transformar: (pedido: Pedido) => Pedido) => {
-      const alvo = new Set(ids);
-      setPedidos((atual) =>
-        atual.map((p) => (alvo.has(p.id) ? transformar(p) : p)),
-      );
+  const criar = useCallback<ContextoPedidos["criar"]>(
+    async (rascunho, arquivos) => {
+      const formulario = new FormData();
+      formulario.set("dados", JSON.stringify(rascunho));
+      for (const f of arquivos.print) formulario.append("print_confirmacao", f);
+      for (const f of arquivos.audio) formulario.append("audio_confirmacao", f);
+      const pedido = await chamar(acoes.criarPedido(formulario));
+      if (pedido) aplicar([pedido]);
+      return pedido;
     },
-    [],
+    [aplicar],
   );
 
-  const criar = useCallback<ContextoPedidos["criar"]>((rascunho, vendedorId) => {
-    const kit = kits.find((k) => k.id === rascunho.kitId);
-    if (!kit) throw new Error(`Kit desconhecido: ${rascunho.kitId}`);
-
-    const criadoEm = agora();
-    const pedidoId = novoId("ped");
-    const temAjuste = rascunho.ajuste !== null;
-    const valorTotal = kit.precoTabela;
-
-    const linha =
-      linhas.find((l) => l.ativa && l.vendedoresIds.includes(vendedorId)) ?? null;
-
-    const anexos: Anexo[] = rascunho.anexos.map((a) => ({
-      ...a,
-      id: novoId("anx"),
-      criadoEm,
-      criadoPor: vendedorId,
-      url: "#",
-    }));
-
-    const ajustes: AjusteValor[] = temAjuste
-      ? [
-          {
-            id: novoId("aju"),
-            pedidoId,
-            tipo: rascunho.ajuste!.tipo,
-            valorAnterior: valorTotal,
-            valorSolicitado:
-              rascunho.ajuste!.tipo === "desconto"
-                ? valorTotal - rascunho.ajuste!.valor
-                : valorTotal + rascunho.ajuste!.valor,
-            motivo: rascunho.ajuste!.motivo,
-            solicitadoPor: vendedorId,
-            solicitadoEm: criadoEm,
-            status: "pendente",
-            decididoPor: null,
-            decididoEm: null,
-            observacaoDecisao: null,
-          },
-        ]
-      : [];
-
-    const linhaDoTempo: EventoPedido[] = [
-      evento(
-        "criacao",
-        "Pedido criado",
-        `Fechamento por telefone, valor de ${formatBRL(valorTotal)}.`,
-        vendedorId,
-        { ocorridoEm: criadoEm, status: "agendado", valor: valorTotal },
-      ),
-      ...anexos.map((a) =>
-        evento("anexo", "Anexo adicionado", a.nome, vendedorId, {
-          ocorridoEm: criadoEm,
-        }),
-      ),
-      ...ajustes.map((a) =>
-        evento(
-          "ajuste",
-          "Ajuste de valor solicitado",
-          `${a.motivo} De ${formatBRL(a.valorAnterior)} para ${formatBRL(a.valorSolicitado)}.`,
-          vendedorId,
-          { ocorridoEm: criadoEm, valor: a.valorSolicitado },
-        ),
-      ),
-    ];
-
-    const pedido: Pedido = {
-      id: pedidoId,
-      codigo: `AX-${proximoCodigo++}`,
-      status: "agendado",
-      cliente: { ...rascunho.cliente, id: novoId("cli"), criadoEm },
-      itens: [
-        {
-          kitId: kit.id,
-          kitNome: kit.nome,
-          quantidade: 1,
-          precoUnitario: valorTotal,
-        },
-      ],
-      valorTotal,
-      frete: kit.freteEstimado,
-      vendedorId,
-      criativoId:
-        rascunho.criativoId === CRIATIVO_NAO_IDENTIFICADO
-          ? null
-          : rascunho.criativoId,
-      linhaWhatsappId: linha?.id ?? null,
-      agendadoPara: criadoEm,
-      criadoEm,
-      autorizadoEm: null,
-      autorizadoPor: null,
-      rastreio: null,
-      cobranca: {
-        responsavelId: null,
-        tentativas: 0,
-        ultimaTentativaEm: null,
-        proximoContatoEm: null,
-        formaPagamento: "nao_definido",
-        pagoEm: null,
-        valorRecebido: null,
-        taxaAplicada: null,
-        bancoId: null,
-        comprovanteAnexoId: null,
-        observacoes: null,
-      },
-      custos: { frete: 0, pote: 0, total: 0 },
-      ajustes,
-      anexos,
-      linhaDoTempo,
-      confirmacaoPorTexto: rascunho.confirmacaoPorTexto,
-      enderecoValidado: true,
-      motivoCancelamento: null,
-      observacoes: rascunho.observacoes.trim() || null,
-      fonte: "manual",
-      atualizadoEm: criadoEm,
-    };
-
-    setPedidos((atual) => [pedido, ...atual]);
-    return pedido;
-  }, [kits, linhas]);
-
-  /**
-   * Autoriza em lote. O resultado é calculado antes do `setPedidos` para que a
-   * função de atualização continue pura — em desenvolvimento o React a chama
-   * duas vezes, e um acumulador dentro dela duplicaria os itens.
-   */
-  const autorizar = useCallback<ContextoPedidos["autorizar"]>(
-    (ids, autorId) => {
-      const alvo = new Set(ids);
-      const autorizados: Pedido[] = [];
-      const bloqueados: ResultadoAutorizacao["bloqueados"] = [];
-      const porId = new Map<ID, Pedido>();
-
-      for (const pedido of pedidos) {
-        if (!alvo.has(pedido.id)) continue;
-
-        const pendencias = pendenciasDe(pedido);
-        if (pendencias.length > 0) {
-          bloqueados.push({
-            pedido,
-            motivo: pendencias[0].motivo ?? "Checagem pendente.",
-          });
-          continue;
-        }
-
-        const quando = agora();
-        const codigo = simularCodigoRastreio();
-        const autorizado: Pedido = {
-          ...pedido,
-          status: "autorizado",
-          autorizadoEm: quando,
-          autorizadoPor: autorId,
-          atualizadoEm: quando,
-          cobranca: { ...pedido.cobranca, responsavelId: COBRADOR_PADRAO },
-          rastreio: {
-            codigo,
-            status: "aguardando_postagem",
-            servico: "PAC Contrato",
-            postadoEm: null,
-            previsaoEntrega: null,
-            entregueEm: null,
-            tentativasEntrega: 0,
-            eventos: [
-              {
-                id: novoId("rst"),
-                status: "aguardando_postagem",
-                titulo: "Etiqueta emitida",
-                detalhe: "Objeto ainda não postado nos Correios.",
-                unidade: "Agência dos Correios, São Paulo/SP",
-                cidade: "São Paulo",
-                uf: "SP",
-                ocorridoEm: quando,
-              },
-            ],
-            motivoFalha: null,
-            retirada: null,
-            destacado: true,
-            arquivado: false,
-            arquivadoEm: null,
-            atualizadoEm: quando,
-            // Simulado. Vira `api` quando a VendLiber entrar.
-            fonte: "manual",
-          },
-          linhaDoTempo: [
-            ...pedido.linhaDoTempo,
-            evento(
-              "autorizacao",
-              "Envio autorizado",
-              `Código de rastreio ${codigo} gerado.`,
-              autorId,
-              { ocorridoEm: quando, status: "autorizado" },
-            ),
-          ],
-        };
-        autorizados.push(autorizado);
-        porId.set(pedido.id, autorizado);
-      }
-
-      if (porId.size > 0) {
-        setPedidos((atual) => atual.map((p) => porId.get(p.id) ?? p));
-      }
-      return { autorizados, bloqueados };
+  const editar = useCallback<ContextoPedidos["editar"]>(
+    async (pedidoId, edicao) => {
+      const pedido = await chamar(acoes.editarPedido(pedidoId, edicao));
+      if (pedido) aplicar([pedido]);
+      return pedido;
     },
-    [pedidos],
+    [aplicar],
+  );
+
+  const anexar = useCallback<ContextoPedidos["anexar"]>(
+    async (pedidoId, tipo, arquivo) => {
+      const formulario = new FormData();
+      formulario.set("pedidoId", pedidoId);
+      formulario.set("tipo", tipo);
+      formulario.set("arquivo", arquivo);
+      const pedido = await chamar(acoes.anexarAoPedido(formulario));
+      if (pedido) aplicar([pedido]);
+      return pedido;
+    },
+    [aplicar],
+  );
+
+  const autorizar = useCallback<ContextoPedidos["autorizar"]>(
+    async (ids) => {
+      const resultado = await chamar(acoes.autorizarPedidos(ids));
+      if (!resultado) return null;
+      aplicar(resultado.autorizados);
+      return {
+        autorizados: resultado.autorizados,
+        bloqueados: resultado.bloqueados.flatMap((b) => {
+          const pedido = pedidos.find((p) => p.id === b.pedidoId);
+          return pedido ? [{ pedido, motivo: b.motivo }] : [];
+        }),
+      };
+    },
+    [aplicar, pedidos],
   );
 
   const cancelar = useCallback<ContextoPedidos["cancelar"]>(
-    (ids, motivo, autorId) => {
-      const alvo = new Set(ids);
-      const porId = new Map<ID, Pedido>();
-
-      for (const pedido of pedidos) {
-        if (!alvo.has(pedido.id)) continue;
-        // Cancelar só faz sentido antes de autorizar: depois disso o custo já
-        // existe e a saída é reembolso.
-        if (!["agendado", "aguardando_autorizacao"].includes(pedido.status)) {
-          continue;
-        }
-        const quando = agora();
-        porId.set(pedido.id, {
-          ...pedido,
-          status: "cancelado" as StatusPedido,
-          motivoCancelamento: motivo,
-          atualizadoEm: quando,
-          linhaDoTempo: [
-            ...pedido.linhaDoTempo,
-            evento("status", "Pedido cancelado", motivo, autorId, {
-              ocorridoEm: quando,
-              status: "cancelado",
-              valor: 0,
-            }),
-          ],
-        });
-      }
-
-      if (porId.size > 0) {
-        setPedidos((atual) => atual.map((p) => porId.get(p.id) ?? p));
-      }
-      return porId.size;
+    async (ids, motivo) => {
+      const cancelados = aplicar(await chamar(acoes.cancelarPedidos(ids, motivo)));
+      return cancelados ? cancelados.length : null;
     },
-    [pedidos],
+    [aplicar],
   );
 
   const solicitarAjuste = useCallback<ContextoPedidos["solicitarAjuste"]>(
-    (pedidoId, entrada, solicitanteId) => {
-      aplicar([pedidoId], (pedido) => {
-        const quando = agora();
-        const ajuste: AjusteValor = {
-          id: novoId("aju"),
-          pedidoId,
-          tipo: entrada.tipo,
-          valorAnterior: pedido.valorTotal,
-          valorSolicitado: entrada.valorSolicitado,
-          motivo: entrada.motivo,
-          solicitadoPor: solicitanteId,
-          solicitadoEm: quando,
-          status: "pendente",
-          decididoPor: null,
-          decididoEm: null,
-          observacaoDecisao: null,
-        };
-        const titulo =
-          entrada.tipo === "exclusao"
-            ? "Exclusão solicitada"
-            : entrada.tipo === "alteracao_cadastral"
-              ? "Alteração solicitada"
-              : "Ajuste de valor solicitado";
-        return {
-          ...pedido,
-          ajustes: [...pedido.ajustes, ajuste],
-          atualizadoEm: quando,
-          linhaDoTempo: [
-            ...pedido.linhaDoTempo,
-            evento("ajuste", titulo, entrada.motivo, solicitanteId, {
-              ocorridoEm: quando,
-            }),
-          ],
-        };
-      });
+    async (pedidoId, entrada) => {
+      const pedido = await chamar(acoes.solicitarAjuste(pedidoId, entrada));
+      if (pedido) aplicar([pedido]);
+      return pedido !== null;
     },
     [aplicar],
   );
 
   const decidirAjuste = useCallback<ContextoPedidos["decidirAjuste"]>(
-    (pedidoId, ajusteId, decisao, autorId, observacao) => {
-      aplicar([pedidoId], (pedido) => {
-        const quando = agora();
-        const ajuste = pedido.ajustes.find((a) => a.id === ajusteId);
-        if (!ajuste || ajuste.status !== "pendente") return pedido;
-
-        const ajustes = pedido.ajustes.map((a) =>
-          a.id === ajusteId
-            ? {
-                ...a,
-                status: decisao,
-                decididoPor: autorId,
-                decididoEm: quando,
-                observacaoDecisao: observacao,
-              }
-            : a,
-        );
-
-        // Aprovar um ajuste de valor muda o valor do pedido de verdade.
-        const mexeNoValor =
-          decisao === "aprovado" &&
-          (ajuste.tipo === "desconto" || ajuste.tipo === "acrescimo");
-        const valorTotal = mexeNoValor ? ajuste.valorSolicitado : pedido.valorTotal;
-
-        return {
-          ...pedido,
-          ajustes,
-          valorTotal,
-          itens: mexeNoValor
-            ? pedido.itens.map((i, idx) =>
-                idx === 0 ? { ...i, precoUnitario: valorTotal } : i,
-              )
-            : pedido.itens,
-          atualizadoEm: quando,
-          linhaDoTempo: [
-            ...pedido.linhaDoTempo,
-            evento(
-              "ajuste",
-              decisao === "aprovado" ? "Ajuste aprovado" : "Ajuste recusado",
-              observacao,
-              autorId,
-              {
-                ocorridoEm: quando,
-                valor: mexeNoValor ? valorTotal : undefined,
-              },
-            ),
-          ],
-        };
-      });
+    async (pedidoId, ajusteId, decisao, observacao) => {
+      const pedido = await chamar(acoes.decidirAjuste(pedidoId, ajusteId, decisao, observacao));
+      if (pedido) aplicar([pedido]);
+      return pedido !== null;
     },
     [aplicar],
   );
 
   const registrarPagamento = useCallback<ContextoPedidos["registrarPagamento"]>(
-    (pedidoId, dados, autorId) => {
-      aplicar([pedidoId], (pedido) => {
-        const quando = agora();
-        const taxa = dados.taxaAplicada;
-        return {
-          ...pedido,
-          status: "pago" as StatusPedido,
-          // Pago é o fim do ciclo: o custo que a inadimplência tinha gerado
-          // deixa de valer.
-          custos: { frete: 0, pote: 0, total: 0 },
-          cobranca: {
-            ...pedido.cobranca,
-            formaPagamento: dados.forma,
-            pagoEm: dados.data,
-            valorRecebido: dados.valorRecebido,
-            taxaAplicada: taxa,
-            bancoId: dados.bancoId,
-            proximoContatoEm: null,
-            observacoes: dados.observacoes,
-          },
-          atualizadoEm: quando,
-          linhaDoTempo: [
-            ...pedido.linhaDoTempo,
-            evento(
-              "cobranca",
-              "Pagamento recebido",
-              `Recebido via ${ROTULO_FORMA[dados.forma].toLowerCase()}. Taxa estimada de ${formatBRL(taxa)}.`,
-              autorId,
-              {
-                ocorridoEm: dados.data,
-                status: "pago",
-                valor: dados.valorRecebido,
-              },
-            ),
-          ],
-        };
-      });
+    async (pedidoId, dados) => {
+      const pedido = await chamar(acoes.registrarPagamento(pedidoId, dados));
+      if (pedido) aplicar([pedido]);
+      return pedido !== null;
     },
     [aplicar],
   );
 
   const marcarInadimplente = useCallback<ContextoPedidos["marcarInadimplente"]>(
-    (pedidoId, autorId) => {
-      aplicar([pedidoId], (pedido) => {
-        const quando = agora();
-        const pote = custoPotesDoKit(pedido.itens[0]?.kitId ?? "", kits, produtos);
-        const custos = {
-          frete: pedido.frete,
-          pote,
-          total: pedido.frete + pote,
-        };
-        return {
-          ...pedido,
-          status: "inadimplente" as StatusPedido,
-          custos,
-          atualizadoEm: quando,
-          linhaDoTempo: [
-            ...pedido.linhaDoTempo,
-            evento(
-              "custo",
-              "Custo de frete e de pote gerado",
-              `Entregue e não pago. Frete ${formatBRL(custos.frete)} e pote ${formatBRL(custos.pote)}.`,
-              autorId,
-              {
-                ocorridoEm: quando,
-                status: "inadimplente",
-                valor: custos.total,
-              },
-            ),
-          ],
-        };
-      });
+    async (pedidoId) => {
+      const pedido = await chamar(acoes.marcarInadimplente(pedidoId));
+      if (pedido) aplicar([pedido]);
+      return pedido !== null;
     },
-    [aplicar, kits, produtos],
+    [aplicar],
   );
 
-  const excluir = useCallback<ContextoPedidos["excluir"]>((pedidoId) => {
-    setPedidos((atual) => atual.filter((p) => p.id !== pedidoId));
+  const excluir = useCallback<ContextoPedidos["excluir"]>(async (pedidoId) => {
+    const id = await chamar(acoes.excluirPedido(pedidoId));
+    if (id) setPedidos((atual) => atual.filter((p) => p.id !== id));
+    return id !== null;
   }, []);
+
+  const revelarDados = useCallback<ContextoPedidos["revelarDados"]>(
+    (pedidoIds, motivo = "detalhe") => chamar(acoes.revelarDadosCliente(pedidoIds, motivo)),
+    [],
+  );
 
   /* ---------------- rastreio ---------------- */
 
   const arquivarRastreio = useCallback<ContextoPedidos["arquivarRastreio"]>(
-    (ids, arquivar) => {
-      const alvo = new Set(ids);
-      const quando = new Date().toISOString();
-      const novos = new Map<ID, Pedido>();
-
-      for (const pedido of pedidos) {
-        if (!alvo.has(pedido.id) || !pedido.rastreio) continue;
-        if (pedido.rastreio.arquivado === arquivar) continue;
-        novos.set(pedido.id, {
-          ...pedido,
-          rastreio: {
-            ...pedido.rastreio,
-            arquivado: arquivar,
-            // O prazo de arquivamento recomeça do zero ao desarquivar.
-            arquivadoEm: arquivar ? quando : null,
-          },
-        });
-      }
-
-      if (novos.size > 0) {
-        setPedidos((atual) => atual.map((p) => novos.get(p.id) ?? p));
-      }
-      return novos.size;
+    async (ids, arquivar) => {
+      const mudados = aplicar(await chamar(acoes.arquivarRastreios(ids, arquivar)));
+      return mudados ? mudados.length : null;
     },
-    [pedidos],
+    [aplicar],
   );
 
-  const limparDestaque = useCallback<ContextoPedidos["limparDestaque"]>(
-    (pedidoId) => {
-      setPedidos((atual) =>
-        atual.map((p) =>
-          p.id === pedidoId && p.rastreio?.destacado
-            ? { ...p, rastreio: { ...p.rastreio, destacado: false } }
-            : p,
-        ),
-      );
-    },
-    [],
-  );
+  /** Tira o destaque na hora e grava em segundo plano: é só uma marca de leitura. */
+  const tirarDestaque = useCallback((ids: ID[] | null) => {
+    setPedidos((atual) =>
+      atual.map((p) =>
+        p.rastreio?.destacado && (ids === null || ids.includes(p.id))
+          ? { ...p, rastreio: { ...p.rastreio, destacado: false } }
+          : p,
+      ),
+    );
+    void chamar(acoes.limparDestaques(ids));
+  }, []);
 
-  const redefinirDestaques = useCallback<ContextoPedidos["redefinirDestaques"]>(
-    () => {
-      setPedidos((atual) =>
-        atual.map((p) =>
-          p.rastreio?.destacado
-            ? { ...p, rastreio: { ...p.rastreio, destacado: false } }
-            : p,
-        ),
-      );
-    },
-    [],
-  );
+  const limparDestaque = useCallback((pedidoId: ID) => tirarDestaque([pedidoId]), [tirarDestaque]);
+  const redefinirDestaques = useCallback(() => tirarDestaque(null), [tirarDestaque]);
 
   const atualizarRastreios = useCallback<ContextoPedidos["atualizarRastreios"]>(
-    () => {
-      // O resultado é calculado antes do setPedidos para a função de
-      // atualização continuar pura — em desenvolvimento o React a chama duas
-      // vezes, e um acumulador dentro dela contaria em dobro.
-      const novos = new Map<ID, Pedido>();
-      let verificados = 0;
-
-      for (const pedido of pedidos) {
-        if (!pedido.rastreio || pedido.rastreio.arquivado) continue;
-        verificados += 1;
-        const { rastreio } = avancarRastreio(pedido);
-        if (rastreio) novos.set(pedido.id, { ...pedido, rastreio });
-      }
-
-      // Sem novidade não mexe no estado: repintar rolaria a lista de quem
-      // está lendo.
-      if (novos.size > 0) {
-        setPedidos((atual) => atual.map((p) => novos.get(p.id) ?? p));
-      }
-      return { atualizados: novos.size, verificados };
-    },
-    [pedidos],
+    () => chamar(acoes.atualizarRastreios()),
+    [],
   );
 
   const valor = useMemo<ContextoPedidos>(
     () => ({
       pedidos,
       criar,
+      editar,
+      anexar,
       autorizar,
       cancelar,
       solicitarAjuste,
@@ -663,6 +237,7 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
       registrarPagamento,
       marcarInadimplente,
       excluir,
+      revelarDados,
       arquivarRastreio,
       limparDestaque,
       redefinirDestaques,
@@ -671,6 +246,8 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
     [
       pedidos,
       criar,
+      editar,
+      anexar,
       autorizar,
       cancelar,
       solicitarAjuste,
@@ -678,6 +255,7 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
       registrarPagamento,
       marcarInadimplente,
       excluir,
+      revelarDados,
       arquivarRastreio,
       limparDestaque,
       redefinirDestaques,

@@ -8,7 +8,7 @@ import { formatTelefone } from "@/lib/format";
 import { useCadastros } from "@/lib/providers/cadastros";
 import { useEquipe } from "@/lib/providers/equipe";
 import { usePedidos } from "@/lib/providers/pedidos";
-import { codigoCompleto } from "@/lib/mock/marketing";
+import { codigoCompleto } from "@/lib/criativos";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
 import { Card, CardConteudo, CardDescricao, CardTitulo } from "@/components/ui/card";

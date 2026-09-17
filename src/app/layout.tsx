@@ -1,13 +1,8 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import { Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { AparenciaProvider, SCRIPT_APARENCIA } from "@/lib/providers/aparencia";
-import { SessaoProvider } from "@/lib/providers/sessao";
-import { PedidosProvider } from "@/lib/providers/pedidos";
-import { EquipeProvider } from "@/lib/providers/equipe";
-import { CadastrosProvider } from "@/lib/providers/cadastros";
-import { FinanceiroProvider } from "@/lib/providers/financeiro";
-import { MarketingProvider } from "@/lib/providers/marketing";
 import { ProvedorDica } from "@/components/ui/tooltip";
 import { Avisos } from "@/components/ui/toast";
 
@@ -32,33 +27,21 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="pt-BR" data-theme="dark" data-accent="amarelo" suppressHydrationWarning>
       <head>
         {/* Aplica tema e destaque salvos antes da primeira pintura. */}
-        <script dangerouslySetInnerHTML={{ __html: SCRIPT_APARENCIA }} />
+        <script nonce={(await headers()).get("x-nonce") ?? undefined} dangerouslySetInnerHTML={{ __html: SCRIPT_APARENCIA }} />
       </head>
       <body className={`${spaceGrotesk.variable} antialiased`}>
         <AparenciaProvider>
-          <EquipeProvider>
-            <SessaoProvider>
-              <CadastrosProvider>
-                <PedidosProvider>
-                  <FinanceiroProvider>
-                    <MarketingProvider>
-                      <ProvedorDica delayDuration={250}>
-                        {children}
-                        <Avisos />
-                      </ProvedorDica>
-                    </MarketingProvider>
-                  </FinanceiroProvider>
-                </PedidosProvider>
-              </CadastrosProvider>
-            </SessaoProvider>
-          </EquipeProvider>
+          <ProvedorDica delayDuration={250}>
+            {children}
+            <Avisos />
+          </ProvedorDica>
         </AparenciaProvider>
       </body>
     </html>

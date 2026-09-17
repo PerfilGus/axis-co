@@ -40,9 +40,9 @@ const CLASSE_ESCONDE = {
 } as const;
 
 /**
- * Tabela com busca e filtros. Ordenação e filtragem vivem no cliente
- * enquanto os dados são mock; a assinatura já aceita a troca por
- * paginação de servidor sem mudar as telas.
+ * Tabela com busca e filtros. Ordenação e filtragem vivem no cliente, sobre o
+ * que o servidor carregou; a assinatura já aceita a troca por paginação de
+ * servidor sem mudar as telas.
  *
  * Desenha as primeiras `porPagina` linhas e oferece mostrar mais: o histórico
  * de pedidos passa de mil registros.

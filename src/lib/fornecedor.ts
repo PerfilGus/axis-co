@@ -8,7 +8,7 @@ import type {
 } from "@/lib/types";
 import { formatData, formatDataHoraCurta } from "@/lib/format";
 import { STATUS_PEDIDO } from "@/lib/status";
-import { potesDoKit } from "@/lib/mock/catalogo";
+import { potesDoKit } from "@/lib/catalogo";
 import { dentro, intervaloDeDias, type Intervalo } from "@/lib/periodos";
 
 /**

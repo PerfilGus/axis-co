@@ -7,7 +7,6 @@ import type {
   PeriodoMeta,
   Pedido,
 } from "@/lib/types";
-import { HOJE } from "@/lib/mock/base";
 import { formatBRL, formatNumero } from "@/lib/format";
 import { baseDaComissao } from "@/lib/comissoes";
 import { carteiraDe } from "@/lib/desempenho";
@@ -72,7 +71,7 @@ export function semanaDoColaborador(
   pedidos: Pedido[],
   metas: Meta[],
   atividade: Set<string>,
-  referencia = HOJE,
+  referencia = new Date(),
 ): DiaDaSemana[] {
   const dia0 = diaDe(janelaDaMeta("semanal", referencia).inicio);
   const hojeDia = hoje(referencia);
@@ -100,7 +99,7 @@ export function semanaDoColaborador(
  * Dias seguidos com atividade. Hoje ainda sem movimento não quebra a
  * sequência: ela conta a partir de ontem até o dia acabar.
  */
-export function sequenciaDeDias(atividade: Set<string>, referencia = HOJE): number {
+export function sequenciaDeDias(atividade: Set<string>, referencia = new Date()): number {
   let dia = hoje(referencia);
   if (!atividade.has(dia)) dia = somarDias(dia, -1);
   let total = 0;
@@ -143,7 +142,7 @@ export function proximasConquistas(
   metas: Meta[],
   pedidos: Pedido[],
   atividade: Set<string>,
-  referencia = HOJE,
+  referencia = new Date(),
 ): EtapaConquista[] {
   const minhas = metasDoColaborador(metas, colaborador.id);
   const hojeDia = hoje(referencia);

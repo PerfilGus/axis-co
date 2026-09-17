@@ -160,7 +160,7 @@ const GRUPOS_VENDEDOR: GrupoNav[] = [
   { id: "equipe", rotulo: "Equipe", icone: "equipe", href: RANKING.href, itens: [] },
 ];
 
-const GRUPOS_FINANCEIRO: GrupoNav[] = [
+const GRUPOS_COBRADOR: GrupoNav[] = [
   { id: "minha-area", rotulo: "Minha área", icone: "minhaArea", href: MINHA_AREA.href, itens: [] },
   { id: "cobranca", rotulo: "Cobrança", icone: "cobranca", href: COBRANCA.href, itens: [] },
   { id: "equipe", rotulo: "Equipe", icone: "equipe", href: RANKING.href, itens: [] },
@@ -169,7 +169,7 @@ const GRUPOS_FINANCEIRO: GrupoNav[] = [
 export const GRUPOS_POR_PERFIL: Record<Perfil, GrupoNav[]> = {
   admin: GRUPOS_ADMIN,
   vendedor: GRUPOS_VENDEDOR,
-  financeiro: GRUPOS_FINANCEIRO,
+  cobrador: GRUPOS_COBRADOR,
 };
 
 const CONFIG_ADMIN: ItemNav[] = [
@@ -207,10 +207,17 @@ const CONFIG_ADMIN: ItemNav[] = [
 
 const APARENCIA = CONFIG_ADMIN[CONFIG_ADMIN.length - 1];
 
+const SEGURANCA: ItemNav = {
+  rotulo: "Segurança da conta",
+  href: "/configuracoes/seguranca",
+  icone: "cadeado",
+  descricao: "Senha, verificação em duas etapas e aparelhos conectados.",
+};
+
 export const CONFIG_POR_PERFIL: Record<Perfil, ItemNav[]> = {
-  admin: CONFIG_ADMIN,
-  vendedor: [APARENCIA],
-  financeiro: [APARENCIA],
+  admin: [...CONFIG_ADMIN, SEGURANCA],
+  vendedor: [APARENCIA, SEGURANCA],
+  cobrador: [APARENCIA, SEGURANCA],
 };
 
 export const GRUPO_CONFIG: GrupoNav = {
@@ -218,7 +225,7 @@ export const GRUPO_CONFIG: GrupoNav = {
   rotulo: "Configurações",
   icone: "configuracoes",
   href: "/configuracoes/produtos",
-  itens: CONFIG_ADMIN,
+  itens: [...CONFIG_ADMIN, SEGURANCA],
 };
 
 /** Grupo (ou Configurações) ao qual a rota atual pertence. */

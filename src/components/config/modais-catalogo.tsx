@@ -76,7 +76,7 @@ function FormularioProduto({
   const [ativo, setAtivo] = useState(produto?.ativo ?? true);
   const [erros, setErros] = useState<Erros>({});
 
-  function salvar() {
+  async function salvar() {
     const e: Erros = {};
     const custoCentavos = parseBRL(custo);
     const gramasNumero = Number(gramas.replace(/\D/g, ""));
@@ -87,7 +87,7 @@ function FormularioProduto({
     setErros(e);
     if (Object.keys(e).length > 0 || custoCentavos === null) return;
 
-    const salvo = salvarProduto({
+    const salvo = await salvarProduto({
       id: produto?.id,
       nome: nome.trim(),
       sabor: sabor.trim() || null,
@@ -96,6 +96,7 @@ function FormularioProduto({
       fotoUrl,
       ativo,
     });
+    if (!salvo) return;
     toast.success(produto ? "Produto atualizado" : "Produto cadastrado", {
       description: produto
         ? `${salvo.nome} já vale para os próximos cálculos de custo.`
@@ -215,7 +216,7 @@ function FormularioKit({
   const precoCentavos = parseBRL(preco);
   const custoPotes = quantidade * produto.custoUnitario;
 
-  function salvar() {
+  async function salvar() {
     const e: Erros = {};
     const pisoCentavos = parseBRL(piso) ?? precoCentavos;
     const freteCentavos = parseBRL(frete) ?? 0;
@@ -231,7 +232,7 @@ function FormularioKit({
     // Mantém itens de outros produtos, se o kit já tiver: a estrutura aceita
     // mais de um produto, mesmo que este formulário edite só um.
     const outros = kit?.itens.filter((i) => i.produtoId !== produto.id) ?? [];
-    const salvo = salvarKit({
+    const salvo = await salvarKit({
       id: kit?.id,
       nome: nome.trim(),
       descricao: descricao.trim(),
@@ -241,6 +242,7 @@ function FormularioKit({
       freteEstimado: freteCentavos,
       ativo,
     });
+    if (!salvo) return;
     toast.success(kit ? "Kit atualizado" : "Kit cadastrado", {
       description: salvo.ativo
         ? `${salvo.nome} aparece no formulário de pedido por ${formatBRL(salvo.precoTabela)}.`

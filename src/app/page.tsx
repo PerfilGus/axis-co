@@ -1,18 +1,11 @@
-"use client";
-
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { redirect } from "next/navigation";
 import { GRUPOS_POR_PERFIL } from "@/lib/nav";
-import { useSessao } from "@/lib/providers/sessao";
+import { contextoDaSessao } from "@/lib/servidor/sessao";
 
 /** A raiz leva cada perfil para a primeira tela a que ele tem acesso. */
-export default function Raiz() {
-  const router = useRouter();
-  const { perfil } = useSessao();
-
-  useEffect(() => {
-    router.replace(GRUPOS_POR_PERFIL[perfil][0].href);
-  }, [router, perfil]);
-
-  return null;
+export default async function Raiz() {
+  const ctx = await contextoDaSessao();
+  if (!ctx) redirect("/entrar");
+  if (ctx.pendencia) redirect("/primeiro-acesso");
+  redirect(GRUPOS_POR_PERFIL[ctx.colaborador.perfil][0].href);
 }

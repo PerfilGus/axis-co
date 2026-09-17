@@ -5,6 +5,9 @@ import { cn } from "@/lib/utils";
 import { iniciais } from "@/lib/format";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
+import { comprimirImagem } from "@/lib/imagem";
+import { chamar } from "@/lib/providers/acao";
+import { enviarImagem } from "@/app/acoes/cadastros";
 
 /**
  * Miniatura de cadastro: a imagem enviada ou, sem ela, as iniciais sobre a
@@ -38,7 +41,7 @@ export function Miniatura({
       }}
     >
       {url ? (
-        // Blob local da sessão: o otimizador de imagem do Next não o alcança.
+        // Arquivo privado servido por /api/anexos: não passa pelo otimizador do Next.
         // eslint-disable-next-line @next/next/no-img-element
         <img src={url} alt="" className="size-full object-cover" />
       ) : (
@@ -49,8 +52,9 @@ export function Miniatura({
 }
 
 /**
- * Upload manual de imagem. Nesta fase o arquivo não sobe para lugar nenhum:
- * vira uma URL local que vale enquanto a aba estiver aberta.
+ * Upload de imagem de cadastro. Comprime no aparelho, envia para o
+ * armazenamento privado e devolve o endereço interno (`/api/anexos/...`),
+ * que só abre para quem está logado.
  */
 export function EnvioImagem({
   nome,
@@ -58,7 +62,7 @@ export function EnvioImagem({
   cor,
   aoMudar,
   rotulo = "Enviar imagem",
-  tamanhoMaximoMb = 2,
+  tamanhoMaximoMb = 8,
 }: {
   nome: string;
   url: string | null;
@@ -69,19 +73,27 @@ export function EnvioImagem({
 }) {
   const entradaRef = useRef<HTMLInputElement>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
 
-  function receber(arquivo: File | undefined) {
-    if (!arquivo) return;
-    if (!arquivo.type.startsWith("image/")) {
+  async function receber(original: File | undefined) {
+    if (!original) return;
+    if (!original.type.startsWith("image/")) {
       setErro("Escolha um arquivo de imagem.");
       return;
     }
+    setErro(null);
+    setEnviando(true);
+    const arquivo = await comprimirImagem(original);
     if (arquivo.size > tamanhoMaximoMb * 1024 * 1024) {
+      setEnviando(false);
       setErro(`A imagem passa de ${tamanhoMaximoMb} MB.`);
       return;
     }
-    setErro(null);
-    aoMudar(URL.createObjectURL(arquivo));
+    const formulario = new FormData();
+    formulario.set("arquivo", arquivo);
+    const url = await chamar(enviarImagem(formulario));
+    setEnviando(false);
+    if (url) aoMudar(url);
   }
 
   return (
@@ -94,9 +106,10 @@ export function EnvioImagem({
             variante="secundaria"
             tamanho="sm"
             onClick={() => entradaRef.current?.click()}
+            disabled={enviando}
           >
             <Icone nome="upload" size={14} />
-            {url ? "Trocar imagem" : rotulo}
+            {enviando ? "Enviando…" : url ? "Trocar imagem" : rotulo}
           </Botao>
           {url && (
             <Botao type="button" variante="fantasma" tamanho="sm" onClick={() => aoMudar(null)}>
@@ -105,7 +118,7 @@ export function EnvioImagem({
           )}
         </div>
         <p className={cn("text-xs", erro ? "text-[var(--st-vermelho-fg)]" : "text-muted-fg")}>
-          {erro ?? `PNG ou JPG, até ${tamanhoMaximoMb} MB. Sem imagem, usamos as iniciais.`}
+          {erro ?? "Foto ou imagem do aparelho. Sem imagem, usamos as iniciais."}
         </p>
         <input
           ref={entradaRef}
@@ -113,7 +126,7 @@ export function EnvioImagem({
           accept="image/*"
           className="hidden"
           onChange={(e) => {
-            receber(e.target.files?.[0]);
+            void receber(e.target.files?.[0]);
             e.target.value = "";
           }}
         />

@@ -1,7 +1,8 @@
-import type { Pedido } from "@/lib/types";
+import type { Kit, Pedido } from "@/lib/types";
 import { formatCEP, formatDataHoraCurta, formatHa } from "@/lib/format";
 import { STATUS_RASTREIO } from "@/lib/status";
-import { atualizacaoDe, enderecoCompleto, potesDoPedido } from "./lista";
+import { potesDoPedido } from "@/lib/fornecedor";
+import { atualizacaoDe, enderecoCompleto } from "./lista";
 import type { AbaRastreio } from "./lista";
 
 type PedidoRastreado = Pedido & { rastreio: NonNullable<Pedido["rastreio"]> };
@@ -31,7 +32,7 @@ function celula(valor: unknown): string {
  * Portado de `exportCsv()`: separador `;` e BOM UTF-8, para o Excel pt-BR
  * abrir sem embaralhar acento nem juntar tudo numa coluna.
  */
-export function montarCsv(lista: PedidoRastreado[]): Blob {
+export function montarCsv(lista: PedidoRastreado[], kits: Kit[]): Blob {
   const linhas = lista.map((p) =>
     [
       p.rastreio.codigo,
@@ -39,7 +40,7 @@ export function montarCsv(lista: PedidoRastreado[]): Blob {
       p.cliente.telefone,
       enderecoCompleto(p),
       p.cliente.endereco.cep ? formatCEP(p.cliente.endereco.cep) : "",
-      potesDoPedido(p) || "",
+      potesDoPedido(p, kits) || "",
       (p.valorTotal / 100).toFixed(2),
       STATUS_RASTREIO[p.rastreio.status].rotulo,
       p.rastreio.motivoFalha ?? "",
@@ -53,8 +54,8 @@ export function montarCsv(lista: PedidoRastreado[]): Blob {
   return new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
 }
 
-export function baixarCsv(lista: PedidoRastreado[], aba: AbaRastreio): void {
-  const url = URL.createObjectURL(montarCsv(lista));
+export function baixarCsv(lista: PedidoRastreado[], aba: AbaRastreio, kits: Kit[]): void {
+  const url = URL.createObjectURL(montarCsv(lista, kits));
   const a = document.createElement("a");
   a.href = url;
   a.download = `axis-rastreio_${aba}_${Date.now()}.csv`;

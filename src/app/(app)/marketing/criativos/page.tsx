@@ -21,7 +21,7 @@ import {
   totaisDosDias,
   type LinhaCriativo,
 } from "@/lib/meta-ads";
-import { codigoCompleto } from "@/lib/mock/marketing";
+import { codigoCompleto } from "@/lib/criativos";
 import { periodoDoPreset, type PeriodoAnalise } from "@/lib/periodos";
 import { useCadastros } from "@/lib/providers/cadastros";
 import { useMarketing } from "@/lib/providers/marketing";

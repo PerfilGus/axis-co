@@ -1,4 +1,4 @@
-/** Identificador opaco. Vira uuid/serial quando o backend entrar. */
+/** Identificador opaco (uuid gerado no servidor). */
 export type ID = string;
 
 /** Data no formato ISO 8601 (`2026-03-14T18:22:00-03:00`). */
@@ -40,7 +40,7 @@ export interface Anexo {
   mime: string;
   criadoEm: DataISO;
   criadoPor: ID;
-  /** URL local/fake nesta fase. */
+  /** Endereço privado `/api/anexos/[id]`: só abre para quem está logado. */
   url: string;
 }
 

@@ -11,7 +11,10 @@ import {
   formatTelefone,
 } from "@/lib/format";
 import { corComOpacidade, coresRastreio, STATUS_RASTREIO } from "@/lib/status";
-import { atualizacaoDe, potesDoPedido } from "@/lib/rastreio/lista";
+import { atualizacaoDe } from "@/lib/rastreio/lista";
+import { potesDoPedido } from "@/lib/fornecedor";
+import { useCadastros } from "@/lib/providers/cadastros";
+import { BotaoRevelar, useDadosSensiveis } from "@/components/pedido/dado-sensivel";
 import { resumoParaCliente } from "@/lib/rastreio/resumo";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
@@ -46,7 +49,9 @@ export function PainelRastreio({
   const def = STATUS_RASTREIO[rastreio.status];
   const { base, texto } = coresRastreio(rastreio.status);
   const endereco = pedido.cliente.endereco;
-  const potes = potesDoPedido(pedido);
+  const { kits } = useCadastros();
+  const sensiveis = useDadosSensiveis(pedido.id);
+  const potes = potesDoPedido(pedido, kits);
 
   function copiar() {
     const resumo = resumoParaCliente(pedido);
@@ -99,8 +104,13 @@ export function PainelRastreio({
         <Campo
           rotulo="Telefone"
           valor={
-            <span className="tabular">
-              {formatTelefone(pedido.cliente.telefone) || "—"}
+            <span className="flex items-center justify-end gap-1">
+              <span className="tabular">
+                {formatTelefone(sensiveis.dados?.telefone ?? pedido.cliente.telefone) || "—"}
+              </span>
+              {!sensiveis.dados && (
+                <BotaoRevelar carregando={sensiveis.carregando} aoRevelar={sensiveis.revelar} />
+              )}
             </span>
           }
         />

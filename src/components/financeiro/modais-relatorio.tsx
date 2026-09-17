@@ -57,13 +57,13 @@ function FormularioAliquota({ competencia, aoFechar }: { competencia: string; ao
   const [erro, setErro] = useState<string | null>(null);
   const mes = formatCompetencia(competencia);
 
-  function salvar() {
+  async function salvar() {
     const bps = parsePercentual(valor);
     if (bps === null || bps <= 0 || bps > 3300) {
       setErro("Informe a alíquota efetiva, entre 0 e 33%.");
       return;
     }
-    definirAliquota(competencia, bps);
+    if (!(await definirAliquota(competencia, bps))) return;
     toast.success("Alíquota confirmada", { description: `${maiuscula(mes)}: ${formatBps(bps)}.` });
     aoFechar();
   }
@@ -103,8 +103,8 @@ function FormularioAliquota({ competencia, aoFechar }: { competencia: string; ao
             <Botao
               variante="fantasma"
               className="sm:mr-auto"
-              onClick={() => {
-                definirAliquota(competencia, null);
+              onClick={async () => {
+                if (!(await definirAliquota(competencia, null))) return;
                 toast.success("Alíquota voltou a ser estimada", { description: maiuscula(mes) });
                 aoFechar();
               }}
@@ -152,7 +152,7 @@ function FormularioDespesa({ despesa, aoFechar }: { despesa: DespesaFixa | null;
   const [ate, setAte] = useState(despesa?.ate ?? "");
   const [erros, setErros] = useState<Erros>({});
 
-  function salvar() {
+  async function salvar() {
     const e: Erros = {};
     const centavos = parseBRL(valor);
     const diaNumero = Number(dia);
@@ -164,7 +164,7 @@ function FormularioDespesa({ despesa, aoFechar }: { despesa: DespesaFixa | null;
     setErros(e);
     if (Object.keys(e).length > 0 || centavos === null) return;
 
-    salvarDespesa({
+    const salva = await salvarDespesa({
       id: despesa?.id,
       descricao: descricao.trim(),
       categoria,
@@ -173,6 +173,7 @@ function FormularioDespesa({ despesa, aoFechar }: { despesa: DespesaFixa | null;
       desde,
       ate: ate || null,
     });
+    if (!salva) return;
     toast.success(despesa ? "Despesa atualizada" : "Despesa cadastrada", {
       description: `${descricao.trim()}: ${formatBRL(centavos)} por mês.`,
     });
@@ -237,8 +238,8 @@ function FormularioDespesa({ despesa, aoFechar }: { despesa: DespesaFixa | null;
             <Botao
               variante="perigo"
               className="sm:mr-auto"
-              onClick={() => {
-                excluirDespesa(despesa.id);
+              onClick={async () => {
+                if (!(await excluirDespesa(despesa.id))) return;
                 toast.success("Despesa excluída", {
                   description: "Some também dos meses anteriores. Para só encerrar, preencha o “Até”.",
                 });
@@ -285,7 +286,7 @@ function FormularioDivida({ aoFechar }: { aoFechar: () => void }) {
   const qtd = Number(quantidade) || 0;
   const parcela = parseBRL(valorParcela);
 
-  function salvar() {
+  async function salvar() {
     const e: Erros = {};
     const original = parseBRL(valorOriginal);
     const jurosBps = juros.trim() ? parsePercentual(juros) : 0;
@@ -298,7 +299,7 @@ function FormularioDivida({ aoFechar }: { aoFechar: () => void }) {
     setErros(e);
     if (Object.keys(e).length > 0 || original === null || parcela === null || jurosBps === null) return;
 
-    criarDivida({
+    const criada = await criarDivida({
       credor: credor.trim(),
       descricao: descricao.trim(),
       valorOriginal: original,
@@ -307,6 +308,7 @@ function FormularioDivida({ aoFechar }: { aoFechar: () => void }) {
       valorParcela: parcela,
       primeiroVencimento: isoDoDia(primeiro),
     });
+    if (!criada) return;
     toast.success("Dívida cadastrada", {
       description: `${qtd} parcelas de ${formatBRL(parcela)} com ${credor.trim()}.`,
     });

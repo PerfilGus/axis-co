@@ -11,7 +11,6 @@ import {
   formatData,
 } from "@/lib/format";
 import { competenciaAtual, competenciaDe, ultimasCompetencias } from "@/lib/periodos";
-import { HOJE } from "@/lib/mock/base";
 import { aliquotaDa, calcularDre, despesaVigente, situacaoDivida } from "@/lib/resultado";
 import { CATEGORIA_DESPESA, SITUACAO_ALIQUOTA, STATUS_DIVIDA } from "@/lib/status";
 import { useFinanceiro } from "@/lib/providers/financeiro";
@@ -130,7 +129,7 @@ export function SecaoDividas() {
     (s, d) => s + d.parcelas.filter((p) => !p.pagaEm).reduce((t, p) => t + p.valor, 0),
     0,
   );
-  const atrasadas = dividas.flatMap((d) => d.parcelas).filter((p) => !p.pagaEm && new Date(p.venceEm) < HOJE);
+  const atrasadas = dividas.flatMap((d) => d.parcelas).filter((p) => !p.pagaEm && new Date(p.venceEm) < new Date());
   const mesAtual = competenciaAtual();
   const doMes = dividas
     .flatMap((d) => d.parcelas)
@@ -193,7 +192,7 @@ export function SecaoDividas() {
               {aberta && (
                 <ul className="flex flex-col border-t border-border">
                   {divida.parcelas.map((p) => {
-                    const vencida = !p.pagaEm && new Date(p.venceEm) < HOJE;
+                    const vencida = !p.pagaEm && new Date(p.venceEm) < new Date();
                     return (
                       <li key={p.numero} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-5 py-2.5 last:border-0">
                         <span className="tabular w-10 text-[13px] text-muted-fg">{p.numero}ª</span>
@@ -207,9 +206,9 @@ export function SecaoDividas() {
                         <Botao
                           variante={p.pagaEm ? "fantasma" : "destaqueSuave"}
                           tamanho="sm"
-                          onClick={() => {
+                          onClick={async () => {
                             const pagaEm = p.pagaEm ? null : new Date().toISOString();
-                            alternarParcela(divida.id, p.numero, pagaEm);
+                            if (!(await alternarParcela(divida.id, p.numero, pagaEm))) return;
                             toast.success(pagaEm ? "Parcela marcada como paga" : "Pagamento da parcela desfeito", {
                               description: `${divida.credor}, ${p.numero}ª parcela de ${formatBRL(p.valor)}.`,
                             });

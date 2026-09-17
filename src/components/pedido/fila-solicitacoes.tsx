@@ -55,18 +55,17 @@ function CartaoSolicitacao({
   ajuste,
   aoAbrirPedido,
 }: Solicitacao & { aoAbrirPedido: (pedido: Pedido) => void }) {
-  const { usuario } = useSessao();
   const { decidirAjuste, excluir } = usePedidos();
   const { nomeDe: nomeColaborador } = useEquipe();
   const [observacao, setObservacao] = useState("");
   const tipo = ROTULO_TIPO[ajuste.tipo];
   const mexeNoValor = ajuste.tipo === "desconto" || ajuste.tipo === "acrescimo";
 
-  function decidir(decisao: "aprovado" | "recusado") {
-    decidirAjuste(pedido.id, ajuste.id, decisao, usuario.id, observacao.trim() || null);
+  async function decidir(decisao: "aprovado" | "recusado") {
+    if (!(await decidirAjuste(pedido.id, ajuste.id, decisao, observacao.trim() || null))) return;
 
     if (decisao === "aprovado" && ajuste.tipo === "exclusao") {
-      excluir(pedido.id);
+      if (!(await excluir(pedido.id))) return;
       toast.success(`Pedido ${pedido.codigo} excluído`, {
         description: "A exclusão foi aprovada e o pedido saiu da lista.",
       });

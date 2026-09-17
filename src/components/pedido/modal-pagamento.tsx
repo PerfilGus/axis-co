@@ -14,7 +14,6 @@ import {
   taxaEstimada,
   valorLiquido,
 } from "@/lib/taxas";
-import { useSessao } from "@/lib/providers/sessao";
 import { usePedidos } from "@/lib/providers/pedidos";
 import { useCadastros } from "@/lib/providers/cadastros";
 import { Miniatura } from "@/components/shared/envio-imagem";
@@ -28,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Campo } from "@/components/ui/label";
 import { Input, Textarea } from "@/components/ui/input";
+import { AvisoSaude } from "@/components/shared/aviso-saude";
 import { toast } from "@/components/ui/toast";
 
 type Forma = Exclude<FormaPagamento, "nao_definido">;
@@ -68,7 +68,6 @@ function Formulario({
   aberto: boolean;
   aoFechar: () => void;
 }) {
-  const { usuario } = useSessao();
   const { pedidos, registrarPagamento } = usePedidos();
   const { bancos: casas } = useCadastros();
 
@@ -91,7 +90,7 @@ function Formulario({
   // Só aparece quem recebe nesta forma, conforme o cadastro de bancos.
   const bancos = casas.filter((b) => b.ativo && aceitaForma(b, forma));
 
-  function confirmar() {
+  async function confirmar() {
     const encontrados: Record<string, string> = {};
     const valorCentavos = parseBRL(valor);
     if (!valorCentavos || valorCentavos <= 0) {
@@ -103,18 +102,15 @@ function Formulario({
     setErros(encontrados);
     if (Object.keys(encontrados).length > 0 || valorCentavos === null) return;
 
-    registrarPagamento(
-      pedido.id,
-      {
-        valorRecebido: valorCentavos,
-        data: deCampoData(data),
-        forma,
-        bancoId,
-        taxaAplicada: taxaEstimada(banco, forma, valorCentavos, emitidos),
-        observacoes: observacoes.trim() || null,
-      },
-      usuario.id,
-    );
+    const registrado = await registrarPagamento(pedido.id, {
+      valorRecebido: valorCentavos,
+      data: deCampoData(data),
+      forma,
+      bancoId,
+      taxaAplicada: taxaEstimada(banco, forma, valorCentavos, emitidos),
+      observacoes: observacoes.trim() || null,
+    });
+    if (!registrado) return;
 
     toast.success(`Pagamento de ${pedido.codigo} registrado`, {
       description: `${formatBRL(valorCentavos)} via ${forma === "pix" ? "Pix" : forma === "boleto" ? "boleto" : "link de cartão"}. Taxa estimada de ${formatBRL(taxaEstimada(banco, forma, valorCentavos, emitidos))}.`,
@@ -280,6 +276,7 @@ function Formulario({
               className="min-h-20"
             />
           </Campo>
+          <AvisoSaude />
         </div>
 
         <ModalRodape>

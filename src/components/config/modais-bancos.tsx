@@ -269,14 +269,15 @@ function FormularioBanco({
     setEtapa((i) => Math.min(i + 1, ETAPAS.length - 1));
   }
 
-  function salvar() {
+  async function salvar() {
     for (let i = 0; i < ETAPAS.length - 1; i++) {
       if (!validar(i)) {
         setEtapa(i);
         return;
       }
     }
-    const salvo = salvarBanco({ id: banco?.id, ...montar() });
+    const salvo = await salvarBanco({ id: banco?.id, ...montar() });
+    if (!salvo) return;
     toast.success(banco ? "Banco atualizado" : "Banco cadastrado", {
       description: `${salvo.nome}: ${resumoTaxas(salvo)}.`,
     });
@@ -512,7 +513,7 @@ function FormularioPlataforma({
   const [cartao, setCartao] = useState({ ...camposDe(plataforma?.cartao ?? SEM_TAXA), temTaxa: true });
   const [erros, setErros] = useState<Erros>({});
 
-  function salvar() {
+  async function salvar() {
     const e: Erros = {};
     if (!nome.trim()) e.nome = "Informe o nome da plataforma.";
     if (!(parsePercentual(cartao.percentual) ?? 0) && !(parseBRL(cartao.fixa) ?? 0)) {
@@ -521,7 +522,7 @@ function FormularioPlataforma({
     setErros(e);
     if (Object.keys(e).length > 0) return;
 
-    const salvo = salvarBanco({
+    const salvo = await salvarBanco({
       id: plataforma?.id,
       nome: nome.trim(),
       tipo: "plataforma",
@@ -535,6 +536,7 @@ function FormularioPlataforma({
       pix: SEM_TAXA,
       cartao: taxaDe(cartao, true),
     });
+    if (!salvo) return;
     toast.success(plataforma ? "Plataforma atualizada" : "Plataforma cadastrada", {
       description: `${salvo.nome}: ${resumoTaxas(salvo)}.`,
     });

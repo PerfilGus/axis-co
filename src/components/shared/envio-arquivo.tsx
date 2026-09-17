@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { formatBytes } from "@/lib/format";
+import { comprimirImagem } from "@/lib/imagem";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
 
@@ -10,16 +11,18 @@ export interface ArquivoSelecionado {
   nome: string;
   tamanho: number;
   tipo: string;
+  /** Pronto para enviar: imagens já chegam comprimidas (WebP, até 1600px). */
+  arquivo: File;
 }
 
 /**
- * Upload de arquivo. Nesta fase nada sobe para lugar nenhum: o componente
- * apenas valida e devolve a seleção para o estado local da tela.
+ * Seleção de arquivo. Valida o tamanho, comprime imagens no próprio aparelho e
+ * devolve a seleção para a tela, que envia junto com a ação.
  */
 export function EnvioArquivo({
   aoSelecionar,
   aceita = "image/*,application/pdf",
-  tamanhoMaximoMb = 8,
+  tamanhoMaximoMb = 15,
   multiplo = false,
   rotulo = "Arraste um arquivo ou clique para escolher",
   className,
@@ -36,18 +39,23 @@ export function EnvioArquivo({
   const [arquivos, setArquivos] = useState<ArquivoSelecionado[]>([]);
   const [erro, setErro] = useState<string | null>(null);
 
-  function receber(lista: FileList | null) {
+  const [preparando, setPreparando] = useState(false);
+
+  async function receber(lista: FileList | null) {
     if (!lista || lista.length === 0) return;
     const limite = tamanhoMaximoMb * 1024 * 1024;
     const aceitos: ArquivoSelecionado[] = [];
 
-    for (const arquivo of Array.from(lista)) {
+    setPreparando(true);
+    for (const original of Array.from(lista)) {
+      const arquivo = await comprimirImagem(original);
       if (arquivo.size > limite) {
-        setErro(`"${arquivo.name}" passa de ${tamanhoMaximoMb} MB.`);
+        setErro(`"${original.name}" passa de ${tamanhoMaximoMb} MB.`);
         continue;
       }
-      aceitos.push({ nome: arquivo.name, tamanho: arquivo.size, tipo: arquivo.type });
+      aceitos.push({ nome: arquivo.name, tamanho: arquivo.size, tipo: arquivo.type, arquivo });
     }
+    setPreparando(false);
 
     if (aceitos.length === 0) return;
     setErro(null);
@@ -73,7 +81,7 @@ export function EnvioArquivo({
         onDrop={(e) => {
           e.preventDefault();
           setSobre(false);
-          receber(e.dataTransfer.files);
+          void receber(e.dataTransfer.files);
         }}
         onClick={() => entradaRef.current?.click()}
         role="button"
@@ -91,7 +99,7 @@ export function EnvioArquivo({
         <span className="flex size-10 items-center justify-center rounded-full bg-surface-3 text-muted-fg">
           <Icone nome="upload" size={18} />
         </span>
-        <p className="text-[13px] text-fg">{rotulo}</p>
+        <p className="text-[13px] text-fg">{preparando ? "Preparando arquivo…" : rotulo}</p>
         <p className="text-xs text-muted-fg">Até {tamanhoMaximoMb} MB por arquivo.</p>
         <input
           ref={entradaRef}
@@ -99,7 +107,10 @@ export function EnvioArquivo({
           accept={aceita}
           multiple={multiplo}
           className="hidden"
-          onChange={(e) => receber(e.target.files)}
+          onChange={(e) => {
+            void receber(e.target.files);
+            e.target.value = "";
+          }}
         />
       </div>
 

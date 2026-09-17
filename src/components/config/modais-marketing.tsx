@@ -6,7 +6,7 @@ import { RE_CODIGO_CRIATIVO, RE_VARIACAO_CRIATIVO, ROTULO_FORMATO } from "@/lib/
 import { digitos, mascaraTelefone } from "@/lib/format";
 import { useCadastros } from "@/lib/providers/cadastros";
 import { useEquipe } from "@/lib/providers/equipe";
-import { codigoCompleto } from "@/lib/mock/marketing";
+import { codigoCompleto } from "@/lib/criativos";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
 import { Modal, ModalCabecalho, ModalConteudo, ModalRodape } from "@/components/ui/dialog";
@@ -59,7 +59,7 @@ function FormularioCriativo({
   const [ativo, setAtivo] = useState(criativo?.ativo ?? true);
   const [erros, setErros] = useState<Erros>({});
 
-  function salvar() {
+  async function salvar() {
     const e: Erros = {};
     const letra = variacao.trim().toUpperCase() || null;
     if (!RE_CODIGO_CRIATIVO.test(codigo)) {
@@ -79,7 +79,7 @@ function FormularioCriativo({
     setErros(e);
     if (Object.keys(e).length > 0) return;
 
-    const salvo = salvarCriativo({
+    const salvo = await salvarCriativo({
       id: criativo?.id,
       codigo,
       variacao: letra,
@@ -90,6 +90,7 @@ function FormularioCriativo({
       thumbUrl: criativo?.thumbUrl ?? null,
       ativo,
     });
+    if (!salvo) return;
     toast.success(criativo ? "Criativo atualizado" : "Criativo cadastrado", {
       description: `${codigoCompleto(salvo)} · ${linhas.find((l) => l.id === linhaId)?.nome ?? ""}`,
     });
@@ -228,7 +229,7 @@ function FormularioLinha({
   const [ativa, setAtiva] = useState(linha?.ativa ?? true);
   const [erros, setErros] = useState<Erros>({});
 
-  function salvar() {
+  async function salvar() {
     const e: Erros = {};
     const nomeLimpo = nome.trim().toUpperCase();
     if (!nomeLimpo) e.nome = "Dê um nome curto, como WPP3.";
@@ -240,7 +241,7 @@ function FormularioLinha({
     setErros(e);
     if (Object.keys(e).length > 0) return;
 
-    salvarLinha({ id: linha?.id, nome: nomeLimpo, numero: d, vendedoresIds, ativa });
+    if (!(await salvarLinha({ id: linha?.id, nome: nomeLimpo, numero: d, vendedoresIds, ativa }))) return;
     toast.success(linha ? "Linha atualizada" : "Linha cadastrada", {
       description:
         vendedoresIds.length > 0

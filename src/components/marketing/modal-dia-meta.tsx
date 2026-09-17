@@ -54,7 +54,7 @@ function Formulario({ diaInicial, aoFechar }: { diaInicial: string | null; aoFec
     setErros({});
   }
 
-  function salvar() {
+  async function salvar() {
     const e: Record<string, string> = {};
     if (!data || data > limite) e.data = "Escolha um dia até hoje.";
     else if (temApi) e.data = "Este dia já veio da API do Meta e não aceita lançamento manual.";
@@ -63,7 +63,7 @@ function Formulario({ diaInicial, aoFechar }: { diaInicial: string | null; aoFec
     setErros(e);
     if (Object.keys(e).length > 0 || valorCentavos === null) return;
 
-    lancarDia(data, valorCentavos, qtdLeads);
+    if (!(await lancarDia(data, valorCentavos, qtdLeads))) return;
     toast.success(existente ? "Lançamento corrigido" : "Dia lançado", {
       description: `${formatDia(data)}: ${formatBRL(valorCentavos)} e ${qtdLeads} leads.`,
     });
@@ -128,8 +128,8 @@ function Formulario({ diaInicial, aoFechar }: { diaInicial: string | null; aoFec
             <Botao
               variante="perigo"
               className="sm:mr-auto"
-              onClick={() => {
-                excluirDia(data);
+              onClick={async () => {
+                if (!(await excluirDia(data))) return;
                 toast.success("Lançamento removido", { description: formatDia(data) });
                 aoFechar();
               }}

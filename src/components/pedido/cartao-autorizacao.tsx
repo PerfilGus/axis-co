@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import type { Pedido } from "@/lib/types";
 import { formatBRL, formatData } from "@/lib/format";
 import { checklistAutorizacao, podeAutorizar } from "@/lib/checklist";
-import { rotuloCriativo } from "@/lib/mock/marketing";
+import { rotuloCriativo } from "@/lib/criativos";
 import { useEquipe } from "@/lib/providers/equipe";
 import { useCadastros } from "@/lib/providers/cadastros";
 import { Icone } from "@/components/icone";

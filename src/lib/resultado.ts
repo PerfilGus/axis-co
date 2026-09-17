@@ -27,7 +27,6 @@ import {
   intervaloDaCompetencia,
   somarDias,
 } from "@/lib/periodos";
-import { HOJE } from "@/lib/mock/base";
 
 /**
  * Relatório financeiro: DRE do mês em duas leituras.
@@ -68,7 +67,7 @@ export function despesaVigente(despesa: DespesaFixa, competencia: string): boole
   return despesa.desde <= competencia && (despesa.ate === null || despesa.ate >= competencia);
 }
 
-export function situacaoDivida(divida: Divida, referencia = HOJE): "em_dia" | "atrasada" | "quitada" {
+export function situacaoDivida(divida: Divida, referencia = new Date()): "em_dia" | "atrasada" | "quitada" {
   if (divida.parcelas.every((p) => p.pagaEm)) return "quitada";
   const atrasada = divida.parcelas.some((p) => !p.pagaEm && new Date(p.venceEm) < referencia);
   return atrasada ? "atrasada" : "em_dia";
@@ -383,7 +382,7 @@ function media(valores: number[], padrao: number) {
  * entregue à espera do pagamento, cada um multiplicado pela taxa histórica
  * de recebimento da sua etapa, na data em que costuma pagar.
  */
-export function preverEntradas(pedidos: Pedido[], referencia = HOJE): Previsao {
+export function preverEntradas(pedidos: Pedido[], referencia = new Date()): Previsao {
   const pagos = pedidos.filter((p) => p.status === "pago" && p.cobranca.pagoEm);
   const perdidosEnvio = pedidos.filter((p) => p.status === "reembolsado" || p.status === "inadimplente");
   const inadimplentes = pedidos.filter((p) => p.status === "inadimplente");

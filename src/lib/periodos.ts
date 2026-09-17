@@ -1,5 +1,4 @@
 import type { DataISO, PeriodoMeta } from "@/lib/types";
-import { HOJE } from "@/lib/mock/base";
 
 /**
  * Janelas de tempo de metas, ranking e comissões.
@@ -8,7 +7,7 @@ import { HOJE } from "@/lib/mock/base";
  * não com `setHours` local: servidor e navegador precisam cortar o dia no
  * mesmo instante, senão a contagem diverge na hidratação.
  *
- * A referência é `HOJE`, o mesmo "hoje" dos mocks. A janela corrente fica
+ * A referência é o momento atual, no fuso de São Paulo. A janela corrente fica
  * aberta no fim, para contar também o que foi criado nesta sessão.
  */
 
@@ -53,7 +52,7 @@ export function dentro(iso: DataISO | null, intervalo: Intervalo): boolean {
 }
 
 /** Janela corrente de uma meta. */
-export function janelaDaMeta(periodo: PeriodoMeta, referencia = HOJE): Intervalo {
+export function janelaDaMeta(periodo: PeriodoMeta, referencia = new Date()): Intervalo {
   if (periodo === "diaria") return { inicio: inicioDoDiaBR(referencia), fim: null };
   if (periodo === "semanal") return { inicio: inicioDaSemanaBR(referencia), fim: null };
   return { inicio: inicioDoMesBR(referencia), fim: null };
@@ -65,12 +64,12 @@ export function competenciaDe(iso: DataISO | Date): string {
   return new Date(d.getTime() - OFFSET_MS).toISOString().slice(0, 7);
 }
 
-export function competenciaAtual(referencia = HOJE): string {
+export function competenciaAtual(referencia = new Date()): string {
   return competenciaDe(referencia);
 }
 
 /** A competência é o mês cheio; a corrente fica aberta no fim. */
-export function intervaloDaCompetencia(competencia: string, referencia = HOJE): Intervalo {
+export function intervaloDaCompetencia(competencia: string, referencia = new Date()): Intervalo {
   const [ano, mes] = competencia.split("-").map(Number);
   const inicio = new Date(Date.UTC(ano, mes - 1, 1) + OFFSET_MS);
   const aberta = competencia === competenciaAtual(referencia);
@@ -85,7 +84,7 @@ export function intervaloDaCompetencia(competencia: string, referencia = HOJE): 
 export function janelasNaCompetencia(
   periodo: PeriodoMeta,
   competencia: string,
-  referencia = HOJE,
+  referencia = new Date(),
 ): Intervalo[] {
   const mes = intervaloDaCompetencia(competencia, referencia);
   if (periodo === "mensal") return [mes];
@@ -109,7 +108,7 @@ export function janelasNaCompetencia(
 }
 
 /** As últimas `quantidade` competências, da mais recente para a mais antiga. */
-export function ultimasCompetencias(quantidade: number, referencia = HOJE): string[] {
+export function ultimasCompetencias(quantidade: number, referencia = new Date()): string[] {
   return Array.from({ length: quantidade }, (_, i) =>
     competenciaDe(inicioDoMesBR(referencia, -i)),
   );
@@ -125,7 +124,7 @@ export const PERIODOS_RANKING: Array<{ valor: PeriodoRanking; rotulo: string }> 
   { valor: "90_dias", rotulo: "Últimos 90 dias" },
 ];
 
-export function intervaloDoRanking(periodo: PeriodoRanking, referencia = HOJE): Intervalo {
+export function intervaloDoRanking(periodo: PeriodoRanking, referencia = new Date()): Intervalo {
   switch (periodo) {
     case "hoje":
       return janelaDaMeta("diaria", referencia);
@@ -153,7 +152,7 @@ export function diaDe(iso: DataISO | Date): string {
   return new Date(d.getTime() - OFFSET_MS).toISOString().slice(0, 10);
 }
 
-export function hoje(referencia = HOJE): string {
+export function hoje(referencia = new Date()): string {
   return diaDe(referencia);
 }
 
@@ -177,7 +176,7 @@ export function isoDoDia(dia: string): DataISO {
  * Intervalo de `de` a `ate`, inclusive. Quando alcança hoje, fica aberto no
  * fim, para contar o que foi lançado nesta sessão.
  */
-export function intervaloDeDias(de: string, ate: string, referencia = HOJE): Intervalo {
+export function intervaloDeDias(de: string, ate: string, referencia = new Date()): Intervalo {
   return {
     inicio: inicioDoDia(de),
     fim: ate >= hoje(referencia) ? null : inicioDoDia(somarDias(ate, 1)),
@@ -220,7 +219,7 @@ export interface PeriodoAnalise {
 }
 
 /** Datas de um preset. `personalizado` devolve os últimos 30 dias como ponto de partida. */
-export function periodoDoPreset(preset: PresetPeriodo, referencia = HOJE): PeriodoAnalise {
+export function periodoDoPreset(preset: PresetPeriodo, referencia = new Date()): PeriodoAnalise {
   const dia = hoje(referencia);
   switch (preset) {
     case "7d":

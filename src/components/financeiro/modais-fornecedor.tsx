@@ -1,11 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import type { Anexo, FaturaFornecedor } from "@/lib/types";
+import type { FaturaFornecedor } from "@/lib/types";
 import { centavosParaCampo, formatBRL, formatDia, parseBRL } from "@/lib/format";
 import { hoje, isoDoDia } from "@/lib/periodos";
 import { useFinanceiro } from "@/lib/providers/financeiro";
-import { useSessao } from "@/lib/providers/sessao";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
 import { Modal, ModalCabecalho, ModalConteudo, ModalRodape } from "@/components/ui/dialog";
@@ -32,7 +31,7 @@ function FormularioParametros({ aoFechar }: { aoFechar: () => void }) {
   const [frete, setFrete] = useState(centavosParaCampo(parametros.freteEnvio));
   const [erros, setErros] = useState<Erros>({});
 
-  function salvar() {
+  async function salvar() {
     const e: Erros = {};
     const custoPote = parseBRL(pote);
     const freteEnvio = parseBRL(frete);
@@ -42,7 +41,7 @@ function FormularioParametros({ aoFechar }: { aoFechar: () => void }) {
     setErros(e);
     if (Object.keys(e).length > 0 || custoPote === null || freteEnvio === null) return;
 
-    salvarParametros({ fornecedor: fornecedor.trim(), custoPote, freteEnvio });
+    if (!(await salvarParametros({ fornecedor: fornecedor.trim(), custoPote, freteEnvio }))) return;
     toast.success("Parâmetros atualizados", {
       description: "O previsto de todos os envios foi recalculado com os valores novos.",
     });
@@ -105,14 +104,13 @@ export function ModalPagamentoFornecedor({ aberto, aoFechar }: { aberto: boolean
 
 function FormularioPagamento({ aoFechar }: { aoFechar: () => void }) {
   const { parametros, lancarPagamentoFornecedor } = useFinanceiro();
-  const { usuario } = useSessao();
   const [data, setData] = useState(hoje());
   const [valor, setValor] = useState("");
   const [observacoes, setObservacoes] = useState("");
   const [arquivo, setArquivo] = useState<ArquivoSelecionado | null>(null);
   const [erros, setErros] = useState<Erros>({});
 
-  function salvar() {
+  async function salvar() {
     const e: Erros = {};
     const centavos = parseBRL(valor);
     if (!data || data > hoje()) e.data = "Escolha a data do pagamento, até hoje.";
@@ -121,19 +119,11 @@ function FormularioPagamento({ aoFechar }: { aoFechar: () => void }) {
     if (Object.keys(e).length > 0 || centavos === null) return;
 
     const pagoEm = isoDoDia(data);
-    const comprovante: Anexo | null = arquivo
-      ? {
-          id: `anx_pfor_${Date.now()}`,
-          nome: arquivo.nome,
-          tipo: "comprovante",
-          tamanhoBytes: arquivo.tamanho,
-          mime: arquivo.tipo,
-          criadoEm: new Date().toISOString(),
-          criadoPor: usuario.id,
-          url: "#",
-        }
-      : null;
-    lancarPagamentoFornecedor({ pagoEm, valor: centavos, comprovante, observacoes: observacoes.trim() || null });
+    const lancado = await lancarPagamentoFornecedor(
+      { pagoEm, valor: centavos, observacoes: observacoes.trim() || null },
+      arquivo?.arquivo ?? null,
+    );
+    if (!lancado) return;
     toast.success("Pagamento lançado", {
       description: `${formatBRL(centavos)} para ${parametros.fornecedor} em ${formatDia(data)}.`,
     });
@@ -224,7 +214,7 @@ function FormularioFatura({ fatura, aoFechar }: { fatura: FaturaFornecedor | nul
   const [observacoes, setObservacoes] = useState(fatura?.observacoes ?? "");
   const [erros, setErros] = useState<Erros>({});
 
-  function salvar() {
+  async function salvar() {
     const e: Erros = {};
     const centavos = parseBRL(valor);
     if (!de || !ate) e.periodo = "Informe o período de envios da fatura.";
@@ -233,7 +223,7 @@ function FormularioFatura({ fatura, aoFechar }: { fatura: FaturaFornecedor | nul
     setErros(e);
     if (Object.keys(e).length > 0 || centavos === null) return;
 
-    salvarFatura({
+    const salva = await salvarFatura({
       id: fatura?.id,
       numero: numero.trim() || null,
       de,
@@ -241,6 +231,7 @@ function FormularioFatura({ fatura, aoFechar }: { fatura: FaturaFornecedor | nul
       valorCobrado: centavos,
       observacoes: observacoes.trim() || null,
     });
+    if (!salva) return;
     toast.success(fatura ? "Fatura atualizada" : "Fatura lançada", {
       description: `Envios de ${formatDia(de)} a ${formatDia(ate)}, conferidos contra o previsto.`,
     });
@@ -290,8 +281,8 @@ function FormularioFatura({ fatura, aoFechar }: { fatura: FaturaFornecedor | nul
             <Botao
               variante="perigo"
               className="sm:mr-auto"
-              onClick={() => {
-                excluirFatura(fatura.id);
+              onClick={async () => {
+                if (!(await excluirFatura(fatura.id))) return;
                 toast.success("Fatura removida da conferência");
                 aoFechar();
               }}

@@ -24,7 +24,7 @@ import {
   valorRecebido,
 } from "@/lib/desempenho";
 import { descreverRecompensa, formatarAlvo, medirMeta } from "@/lib/metas";
-import { iso } from "@/lib/mock/base";
+import { iso } from "@/lib/iso";
 
 /**
  * Comissões e fechamentos.

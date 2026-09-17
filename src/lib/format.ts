@@ -83,6 +83,7 @@ export function formatRelativo(iso: DataISO | null, agora = new Date()): string 
 }
 
 export function formatTelefone(valor: string): string {
+  if (estaMascarado(valor)) return valor;
   const d = valor.replace(/\D/g, "");
   if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
   if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
@@ -91,6 +92,7 @@ export function formatTelefone(valor: string): string {
 
 export function formatCPF(valor: string | null): string {
   if (!valor) return "—";
+  if (estaMascarado(valor)) return valor;
   const d = valor.replace(/\D/g, "");
   if (d.length !== 11) return valor;
   return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
@@ -254,4 +256,28 @@ export function formatCompetenciaCurta(competencia: string): string {
     .toLocaleDateString("pt-BR", { month: "short", timeZone: "UTC" })
     .replace(".", "");
   return `${nome}/${String(ano).slice(2)}`;
+}
+
+/* ---------------- dados mascarados (LGPD) ---------------- */
+
+const OCULTO = "•";
+
+/** O dado chegou mascarado do servidor: é mostrado como veio. */
+export function estaMascarado(valor: string | null): boolean {
+  return Boolean(valor?.includes(OCULTO));
+}
+
+/** `(11) •••••-4321`: DDD e os quatro últimos, para reconhecer sem expor. */
+export function ocultarTelefone(valor: string): string {
+  const d = valor.replace(/\D/g, "");
+  if (d.length < 6) return valor ? OCULTO.repeat(4) : "";
+  return `(${d.slice(0, 2)}) ${OCULTO.repeat(Math.max(d.length - 6, 4))}-${d.slice(-4)}`;
+}
+
+/** `•••.•••.789-01`. */
+export function ocultarCPF(valor: string | null): string | null {
+  if (!valor) return null;
+  const d = valor.replace(/\D/g, "");
+  if (d.length !== 11) return OCULTO.repeat(11);
+  return `${OCULTO.repeat(3)}.${OCULTO.repeat(3)}.${d.slice(6, 9)}-${d.slice(9)}`;
 }

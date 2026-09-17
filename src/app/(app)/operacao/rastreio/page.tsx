@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StatusRastreio } from "@/lib/types";
 import { STATUS_RASTREIO, ORDEM_SECOES_RASTREIO } from "@/lib/status";
 import { usePedidos } from "@/lib/providers/pedidos";
+import { useCadastros } from "@/lib/providers/cadastros";
 import {
   agruparEmSecoes,
   rastreaveis,
@@ -39,8 +40,8 @@ import { toast } from "@/components/ui/toast";
  * - Não há inclusão manual: os objetos vêm dos pedidos autorizados.
  * - Não há exclusão: aqui o pedido é o registro financeiro, e tirá-lo da lista
  *   é arquivar — manual e reversível (§12 do inventário).
- * - "Atualizar rastreios" é simulado enquanto a integração com os Correios não
- *   entra; o comportamento da tela é o mesmo.
+ * - "Atualizar rastreios" chama o servidor, que responde sem novidade enquanto
+ *   a integração com os Correios não está conectada.
  */
 
 /** Ciclo automático de 1 minuto, como no original. */
@@ -53,7 +54,9 @@ export default function PaginaRastreio() {
     limparDestaque,
     redefinirDestaques,
     atualizarRastreios,
+    revelarDados,
   } = usePedidos();
+  const { kits } = useCadastros();
 
   const [aba, setAba] = useState<AbaRastreio>("transito");
   const [filtro, setFiltro] = useState<StatusRastreio | "todos">("todos");
@@ -103,26 +106,26 @@ export default function PaginaRastreio() {
   }
 
   const executarAtualizacao = useCallback(
-    ({ silencioso }: { silencioso: boolean }) => {
+    async ({ silencioso }: { silencioso: boolean }) => {
       // Dois ciclos não se sobrepõem.
       if (atualizando) return;
       setAtualizando(true);
 
-      const { atualizados } = atualizarRastreios();
+      const resultado = await atualizarRastreios();
+      setAtualizando(false);
+      if (!resultado) return;
 
-      if (atualizados > 0) {
+      if (resultado.atualizados > 0) {
         toast.success(
-          `${atualizados} rastreio${atualizados === 1 ? "" : "s"} atualizado${atualizados === 1 ? "" : "s"}`,
+          `${resultado.atualizados} rastreio${resultado.atualizados === 1 ? "" : "s"} atualizado${resultado.atualizados === 1 ? "" : "s"}`,
         );
       } else if (!silencioso) {
         toast("Nenhuma novidade nos rastreios", {
-          description:
-            "A consulta é simulada: a integração com os Correios entra na fase de backend.",
+          description: resultado.integrado
+            ? undefined
+            : "A integração com os Correios ainda não está conectada.",
         });
       }
-
-      // Curto o bastante para a animação do botão ser percebida, sem travar.
-      window.setTimeout(() => setAtualizando(false), 400);
     },
     [atualizando, atualizarRastreios],
   );
@@ -142,21 +145,22 @@ export default function PaginaRastreio() {
     setMarcados(new Set());
   }
 
-  function confirmarArquivamento() {
+  async function confirmarArquivamento() {
     const ids = [...marcados];
     const paraArquivar = aba === "transito";
-    const total = arquivarRastreio(ids, paraArquivar);
+    const total = await arquivarRastreio(ids, paraArquivar);
     setConfirmando(false);
+    if (total === null) return;
     sairDaSelecao();
     toast.success(
       `${total} pedido${total === 1 ? "" : "s"} movido${total === 1 ? "" : "s"} para ${paraArquivar ? "Arquivados" : "Em Trânsito"}`,
     );
   }
 
-  function arquivarUm() {
+  async function arquivarUm() {
     if (!aberto) return;
     const paraArquivar = !aberto.rastreio.arquivado;
-    arquivarRastreio([aberto.id], paraArquivar);
+    if ((await arquivarRastreio([aberto.id], paraArquivar)) === null) return;
     setAbertoId(null);
     toast.success(
       paraArquivar
@@ -291,8 +295,19 @@ export default function PaginaRastreio() {
         <Botao
           variante="secundaria"
           tamanho="sm"
-          onClick={() => {
-            baixarCsv(visiveis, aba);
+          onClick={async () => {
+            // O CSV leva telefone completo: a exportação fica registrada.
+            const dados = await revelarDados(visiveis.map((p) => p.id), "exportacao");
+            if (!dados) return;
+            const porId = new Map(dados.map((d) => [d.pedidoId, d]));
+            baixarCsv(
+              visiveis.map((p) => ({
+                ...p,
+                cliente: { ...p.cliente, telefone: porId.get(p.id)?.telefone ?? p.cliente.telefone },
+              })),
+              aba,
+              kits,
+            );
             toast.success("CSV exportado");
           }}
           disabled={visiveis.length === 0}

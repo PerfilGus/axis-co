@@ -25,7 +25,7 @@ import { toast } from "@/components/ui/toast";
 type Aba = "aguardando" | "pagos" | "inadimplentes";
 
 export default function PaginaCobranca() {
-  const { usuario, escopoVendedores, podeOperarCobranca } = useSessao();
+  const { escopoVendedores, podeOperarCobranca } = useSessao();
   const { pedidos: todos, marcarInadimplente } = usePedidos();
   const { nomeDe: nomeColaborador } = useEquipe();
   const { bancos } = useCadastros();
@@ -218,9 +218,9 @@ export default function PaginaCobranca() {
                 tamanho="iconeSm"
                 aria-label="Marcar como inadimplente"
                 title="Marcar como inadimplente"
-                onClick={(e) => {
+                onClick={async (e) => {
                   e.stopPropagation();
-                  marcarInadimplente(p.id, usuario.id);
+                  if (!(await marcarInadimplente(p.id))) return;
                   toast("Pedido marcado como inadimplente", {
                     description: `${p.codigo} passou a gerar custo de frete e de pote.`,
                   });
@@ -233,7 +233,7 @@ export default function PaginaCobranca() {
         ),
       },
     ];
-  }, [aba, marcarInadimplente, usuario.id, nomeColaborador, bancos]);
+  }, [aba, marcarInadimplente, nomeColaborador, bancos]);
 
   if (!podeOperarCobranca) {
     return (

@@ -21,7 +21,8 @@ import {
 } from "@/lib/minha-area";
 import { competenciaAtual, intervaloDoRanking } from "@/lib/periodos";
 import { classificarEquipe } from "@/lib/ranking";
-import { progressoNivel, useEquipe } from "@/lib/providers/equipe";
+import { useEquipe } from "@/lib/providers/equipe";
+import { progressoNivel } from "@/lib/dominio/equipe";
 import { usePedidos } from "@/lib/providers/pedidos";
 import { useSessao } from "@/lib/providers/sessao";
 import { Botao } from "@/components/ui/button";

@@ -114,7 +114,7 @@ function FormularioMeta({
     return convertidas.sort((a, b) => a.alvo - b.alvo);
   }
 
-  function salvar() {
+  async function salvar() {
     const e: Record<string, string> = {};
     if (!colaboradorId) e.colaborador = "Escolha de quem é a meta.";
     if (!nome.trim()) e.nome = "Dê um nome, como “Agendados da semana”.";
@@ -127,7 +127,7 @@ function FormularioMeta({
     setErros(e);
     if (Object.keys(e).length > 0 || !convertidas) return;
 
-    const salva = salvarMeta({
+    const salva = await salvarMeta({
       id: meta?.id,
       colaboradorId,
       nome: nome.trim(),
@@ -136,6 +136,7 @@ function FormularioMeta({
       faixas: convertidas,
       ativa,
     });
+    if (!salva) return;
     toast.success(meta ? "Meta atualizada" : "Meta criada", {
       description: `${salva.faixas.length} ${salva.faixas.length === 1 ? "faixa" : "faixas"}, a primeira em ${formatarAlvo(salva.tipo, salva.faixas[0].alvo)}.`,
     });
@@ -292,8 +293,8 @@ function FormularioMeta({
           {meta ? (
             <Botao
               variante="perigo"
-              onClick={() => {
-                excluirMeta(meta.id);
+              onClick={async () => {
+                if (!(await excluirMeta(meta.id))) return;
                 toast.success("Meta excluída", { description: `${meta.nome} não gera mais bônus.` });
                 aoFechar();
               }}

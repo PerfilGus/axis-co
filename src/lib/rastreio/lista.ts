@@ -1,7 +1,6 @@
 import type { DataISO, Pedido, StatusRastreio } from "@/lib/types";
 import { ultimaAtualizacaoDe } from "@/lib/types/rastreio";
 import { ORDEM_SECOES_RASTREIO, STATUS_RASTREIO } from "@/lib/status";
-import { potesDoKit } from "@/lib/mock/catalogo";
 
 /**
  * Filtro, ordenação e agrupamento da lista de rastreio.
@@ -114,10 +113,3 @@ export function enderecoCompleto(pedido: Pedido): string {
   return `${e.logradouro}, ${e.numero} · ${e.bairro} - ${e.cidade}/${e.uf}`;
 }
 
-/** Quantidade de potes do pedido — o axis-tracking mostra "N potes". */
-export function potesDoPedido(pedido: Pedido): number {
-  return pedido.itens.reduce(
-    (soma, item) => soma + potesDoKit(item.kitId) * item.quantidade,
-    0,
-  );
-}

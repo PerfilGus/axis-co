@@ -8,7 +8,6 @@ import type {
 } from "@/lib/types";
 import { formatBRL, formatBps } from "@/lib/format";
 import { dentro, janelaDaMeta, type Intervalo } from "@/lib/periodos";
-import { HOJE } from "@/lib/mock/base";
 
 /**
  * Taxa estimada de um recebimento.
@@ -129,7 +128,7 @@ export function resumoTaxas(banco: BancoPlataforma): string {
 }
 
 /** Janela corrente da franquia de boletos. */
-export function janelaDaFranquia(periodo: PeriodoFranquia, referencia = HOJE): Intervalo {
+export function janelaDaFranquia(periodo: PeriodoFranquia, referencia = new Date()): Intervalo {
   if (periodo === "semanal") return janelaDaMeta("semanal", referencia);
   if (periodo === "mensal") return janelaDaMeta("mensal", referencia);
   const mes = janelaDaMeta("mensal", referencia).inicio;

@@ -8,7 +8,8 @@ import { formatBRL, formatCompetencia, formatData } from "@/lib/format";
 import { STATUS_PAGAMENTO_COLABORADOR } from "@/lib/status";
 import { comissionavel, fechamentosDaCompetencia } from "@/lib/comissoes";
 import { competenciaAtual, ultimasCompetencias } from "@/lib/periodos";
-import { progressoNivel, useEquipe } from "@/lib/providers/equipe";
+import { useEquipe } from "@/lib/providers/equipe";
+import { progressoNivel } from "@/lib/dominio/equipe";
 import { usePedidos } from "@/lib/providers/pedidos";
 import { useSessao } from "@/lib/providers/sessao";
 import { Icone } from "@/components/icone";
@@ -402,9 +403,9 @@ export default function PaginaFinanceiroComissoes() {
         icone="check"
         rotuloConfirmar="Marcar como pago"
         aoCancelar={() => setPagando(null)}
-        aoConfirmar={() => {
+        aoConfirmar={async () => {
           if (!pagando) return;
-          marcarComoPago([pagando]);
+          if (!(await marcarComoPago([{ colaboradorId: pagando.colaboradorId, competencia: pagando.competencia }]))) return;
           toast.success("Pagamento registrado", {
             description: `${formatBRL(pagando.total)} para ${nomeDe(pagando.colaboradorId)}${pagando.bonusNivelIds.length > 0 ? ", com o bônus de nível" : ""}.`,
           });

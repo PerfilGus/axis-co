@@ -1,7 +1,7 @@
 import type { Colaborador, Nivel, Pedido, Setor } from "@/lib/types";
 import { desempenhoNo, type Desempenho } from "@/lib/desempenho";
 import type { Intervalo } from "@/lib/periodos";
-import { progressoNivel } from "@/lib/providers/equipe";
+import { progressoNivel } from "@/lib/dominio/equipe";
 
 /**
  * Classificação da equipe. A tela de Ranking e o card de Equipe da Minha área

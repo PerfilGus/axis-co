@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import type { Pedido } from "@/lib/types";
+import type { Pedido, TipoAnexo } from "@/lib/types";
 import {
   formatBRL,
   formatCEP,
@@ -17,7 +17,7 @@ import { useSessao } from "@/lib/providers/sessao";
 import { usePedidos } from "@/lib/providers/pedidos";
 import { useEquipe } from "@/lib/providers/equipe";
 import { useCadastros } from "@/lib/providers/cadastros";
-import { codigoCompleto } from "@/lib/mock/marketing";
+import { codigoCompleto } from "@/lib/criativos";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
 import {
@@ -29,12 +29,23 @@ import {
 } from "@/components/ui/drawer";
 import { ControleSegmentado } from "@/components/shared/controles";
 import { EnvioArquivo } from "@/components/shared/envio-arquivo";
+import { ModalConfirmacao } from "@/components/shared/modal-confirmacao";
+import { podeAnexarNoPedido } from "@/lib/permissoes";
 import { IndicadorEtapas } from "@/components/shared/etapas";
 import { SeloFonte, SeloStatusPedido, SeloTom } from "@/components/shared/selo-status";
 import { EstadoVazio } from "@/components/shared/estado-vazio";
 import { toast } from "@/components/ui/toast";
 import { LinhaDoTempo } from "./linha-do-tempo";
 import { ModalSolicitacao } from "./modal-solicitacao";
+import { ModalEdicaoPedido } from "./modal-edicao-pedido";
+import { BotaoRevelar, useDadosSensiveis } from "./dado-sensivel";
+
+const TIPOS_ENVIO: Array<{ valor: TipoAnexo; rotulo: string }> = [
+  { valor: "print_confirmacao", rotulo: "Print" },
+  { valor: "audio_confirmacao", rotulo: "Áudio" },
+  { valor: "comprovante", rotulo: "Comprovante" },
+  { valor: "foto_entrega", rotulo: "Entrega" },
+];
 
 type Aba = "resumo" | "linha" | "anexos";
 
@@ -90,8 +101,8 @@ function Linha({
 /**
  * Detalhe do pedido em gaveta: resumo, linha do tempo e anexos.
  *
- * Nesta fase nada é persistido — as ações mostram o retorno na interface e
- * atualizam apenas o estado local.
+ * CPF e telefone chegam mascarados; o completo vem por "Ver dados completos",
+ * que registra a visualização. Anexos abrem pelo endereço privado.
  */
 export function GavetaPedido({
   pedido,
@@ -104,9 +115,14 @@ export function GavetaPedido({
 }) {
   const [aba, setAba] = useState<Aba>("resumo");
   const [solicitando, setSolicitando] = useState(false);
+  const [editando, setEditando] = useState(false);
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  const [tipoEnvio, setTipoEnvio] = useState<TipoAnexo>("comprovante");
+  const [enviando, setEnviando] = useState(false);
+  const sensiveis = useDadosSensiveis(pedido?.id ?? "");
   const { podeEditarPedido, podeExcluirPedido, podeAprovarAjuste, usuario } =
     useSessao();
-  const { decidirAjuste, excluir } = usePedidos();
+  const { decidirAjuste, excluir, anexar } = usePedidos();
   const { nomeDe: nomeColaborador } = useEquipe();
   const { criativos, linhas, bancos } = useCadastros();
 
@@ -190,15 +206,21 @@ export function GavetaPedido({
             <div className="flex flex-col gap-7">
               <Secao
                 titulo="Cliente"
-                acao={<SeloFonte fonte={pedido.fonte} integracao="VendLiber" />}
+                acao={
+                  sensiveis.dados ? (
+                    <SeloFonte fonte={pedido.fonte} integracao="VendLiber" />
+                  ) : (
+                    <BotaoRevelar carregando={sensiveis.carregando} aoRevelar={sensiveis.revelar} />
+                  )
+                }
               >
                 <div className="rounded-[var(--radius-card-sm)] border border-border bg-surface-2 px-4 py-2">
                   <Linha rotulo="Nome" valor={pedido.cliente.nome} />
                   <Linha
                     rotulo="Telefone"
-                    valor={formatTelefone(pedido.cliente.telefone)}
+                    valor={formatTelefone(sensiveis.dados?.telefone ?? pedido.cliente.telefone)}
                   />
-                  <Linha rotulo="CPF" valor={formatCPF(pedido.cliente.cpf)} />
+                  <Linha rotulo="CPF" valor={formatCPF(sensiveis.dados ? sensiveis.dados.cpf : pedido.cliente.cpf)} />
                   <Linha
                     rotulo="Endereço"
                     valor={
@@ -292,7 +314,7 @@ export function GavetaPedido({
                     compacto
                     icone="rastreio"
                     titulo="Sem código de rastreio"
-                    descricao="O código é gerado quando o Admin autoriza o envio."
+                    descricao="O código chega pela integração de logística depois da autorização."
                   />
                 )}
               </Secao>
@@ -397,10 +419,10 @@ export function GavetaPedido({
                               <Botao
                                 variante="principal"
                                 tamanho="sm"
-                                onClick={() => {
-                                  decidirAjuste(pedido.id, ajuste.id, "aprovado", usuario.id, null);
+                                onClick={async () => {
+                                  if (!(await decidirAjuste(pedido.id, ajuste.id, "aprovado", null))) return;
                                   if (ajuste.tipo === "exclusao") {
-                                    excluir(pedido.id);
+                                    if (!(await excluir(pedido.id))) return;
                                     aoFechar();
                                   }
                                   toast.success("Solicitação aprovada", {
@@ -414,8 +436,8 @@ export function GavetaPedido({
                               <Botao
                                 variante="secundaria"
                                 tamanho="sm"
-                                onClick={() => {
-                                  decidirAjuste(pedido.id, ajuste.id, "recusado", usuario.id, null);
+                                onClick={async () => {
+                                  if (!(await decidirAjuste(pedido.id, ajuste.id, "recusado", null))) return;
                                   toast("Solicitação recusada", {
                                     description: pedido.codigo + " segue como estava.",
                                   });
@@ -441,30 +463,45 @@ export function GavetaPedido({
               {pedido.anexos.length > 0 && (
                 <ul className="flex flex-col gap-2">
                   {pedido.anexos.map((anexo) => (
-                    <li
-                      key={anexo.id}
-                      className="flex items-center gap-3 rounded-full border border-border bg-surface-2 py-2 pr-4 pl-3.5"
-                    >
-                      <Icone nome="anexo" size={15} className="text-muted-fg" />
-                      <span className="min-w-0 flex-1 truncate text-[13px]">
-                        {anexo.nome}
-                      </span>
-                      <span className="text-[11px] text-muted-fg">
-                        {formatData(anexo.criadoEm)}
-                      </span>
+                    <li key={anexo.id}>
+                      <a
+                        href={anexo.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 rounded-full border border-border bg-surface-2 py-2 pr-4 pl-3.5 transition-colors hover:border-border-strong"
+                      >
+                        <Icone nome="anexo" size={15} className="text-muted-fg" />
+                        <span className="min-w-0 flex-1 truncate text-[13px]">{anexo.nome}</span>
+                        <span className="text-[11px] text-muted-fg">{formatData(anexo.criadoEm)}</span>
+                        <Icone nome="ver" size={14} className="text-muted-fg" />
+                      </a>
                     </li>
                   ))}
                 </ul>
               )}
-              <EnvioArquivo
-                rotulo="Anexar comprovante ou foto da entrega"
-                aoSelecionar={(arquivos) =>
-                  arquivos.length > 0 &&
-                  toast.success("Arquivo pronto para envio", {
-                    description: "Nada sobe ainda: o upload real entra com o backend.",
-                  })
-                }
-              />
+              {podeAnexarNoPedido(usuario, pedido) && (
+                <div className="flex flex-col gap-3">
+                  <ControleSegmentado
+                    tamanho="sm"
+                    valor={tipoEnvio}
+                    aoMudar={setTipoEnvio}
+                    opcoes={TIPOS_ENVIO.map((t) => ({ valor: t.valor, rotulo: t.rotulo }))}
+                  />
+                  <EnvioArquivo
+                    key={pedido.id + "-" + pedido.anexos.length}
+                    aceita={tipoEnvio === "audio_confirmacao" ? "audio/*" : "image/*,application/pdf"}
+                    rotulo={enviando ? "Enviando…" : "Escolha o arquivo para anexar"}
+                    aoSelecionar={async (arquivos) => {
+                      const primeiro = arquivos[0];
+                      if (!primeiro || enviando) return;
+                      setEnviando(true);
+                      const atualizado = await anexar(pedido.id, tipoEnvio, primeiro.arquivo);
+                      setEnviando(false);
+                      if (atualizado) toast.success("Anexo enviado", { description: primeiro.nome });
+                    }}
+                  />
+                </div>
+              )}
             </div>
           )}
         </GavetaCorpo>
@@ -475,20 +512,17 @@ export function GavetaPedido({
               Vendedor não edita nem exclui: a mudança passa pelo Admin.
             </span>
           )}
-          <Botao variante="secundaria" onClick={() => setSolicitando(true)}>
+          <Botao
+            variante="secundaria"
+            onClick={() => (podeEditarPedido ? setEditando(true) : setSolicitando(true))}
+          >
             <Icone nome="editar" size={15} />
             {podeEditarPedido ? "Editar pedido" : "Solicitar alteração"}
           </Botao>
           {podeExcluirPedido && (
             <Botao
               variante="perigo"
-              onClick={() => {
-                excluir(pedido.id);
-                aoFechar();
-                toast("Pedido excluído", {
-                  description: pedido.codigo + " saiu da lista desta sessão.",
-                });
-              }}
+              onClick={() => setConfirmandoExclusao(true)}
             >
               <Icone nome="excluir" size={15} />
               Excluir
@@ -501,6 +535,23 @@ export function GavetaPedido({
         pedido={pedido}
         aberto={solicitando}
         aoFechar={() => setSolicitando(false)}
+      />
+      <ModalEdicaoPedido pedido={pedido} aberto={editando} aoFechar={() => setEditando(false)} />
+      <ModalConfirmacao
+        aberto={confirmandoExclusao}
+        titulo={"Excluir " + pedido.codigo + "?"}
+        mensagem="Apaga o pedido, os anexos e, se não tiver outro pedido, o cadastro do cliente. Não dá para desfazer."
+        itens={[pedido.cliente.nome, formatBRL(pedido.valorTotal)]}
+        perigo
+        icone="excluir"
+        rotuloConfirmar="Excluir pedido"
+        aoCancelar={() => setConfirmandoExclusao(false)}
+        aoConfirmar={async () => {
+          setConfirmandoExclusao(false);
+          if (!(await excluir(pedido.id))) return;
+          aoFechar();
+          toast("Pedido excluído", { description: pedido.codigo + " foi apagado." });
+        }}
       />
     </Gaveta>
   );

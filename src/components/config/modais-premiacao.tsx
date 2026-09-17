@@ -54,7 +54,7 @@ function FormularioNivel({ nivel, aoFechar }: { nivel: Nivel | null; aoFechar: (
   const [bonus, setBonus] = useState(centavosParaCampo(nivel?.bonus ?? null));
   const [erros, setErros] = useState<Erros>({});
 
-  function salvar() {
+  async function salvar() {
     const e: Erros = {};
     const minimo = Number(pontos);
     if (!nome.trim()) e.nome = "Dê um nome ao nível.";
@@ -67,7 +67,7 @@ function FormularioNivel({ nivel, aoFechar }: { nivel: Nivel | null; aoFechar: (
     setErros(e);
     if (Object.keys(e).length > 0 || bonusCentavos === null) return;
 
-    const liberados = salvarNivel({
+    const liberados = await salvarNivel({
       id: nivel?.id,
       nome: nome.trim(),
       pontosNecessarios: minimo,
@@ -75,6 +75,7 @@ function FormularioNivel({ nivel, aoFechar }: { nivel: Nivel | null; aoFechar: (
       ordem: nivel?.ordem ?? niveis.length + 1,
       icone: nivel?.icone ?? "medalha",
     });
+    if (!liberados) return;
     toast.success(nivel ? "Nível atualizado" : "Nível criado", {
       description:
         liberados.length > 0
@@ -167,14 +168,14 @@ function FormularioConquista({
   const [ativa, setAtiva] = useState(conquista?.ativa ?? true);
   const [erros, setErros] = useState<Erros>({});
 
-  function salvar() {
+  async function salvar() {
     const e: Erros = {};
     if (!nome.trim()) e.nome = "Dê um nome à conquista.";
     if (!(Number(pontos) > 0)) e.pontos = "Quantos pontos ela vale?";
     setErros(e);
     if (Object.keys(e).length > 0) return;
 
-    const salvo = salvarConquista({
+    const salvo = await salvarConquista({
       id: conquista?.id,
       nome: nome.trim(),
       descricao: descricao.trim(),
@@ -185,6 +186,7 @@ function FormularioConquista({
       criterio: criterio.trim() || ROTULO_GATILHO[gatilho].rotulo,
       ativa,
     });
+    if (!salvo) return;
     toast.success(conquista ? "Conquista atualizada" : "Conquista criada", {
       description: `${salvo.nome} vale ${salvo.pontos} pontos${salvo.repetivel ? " cada vez" : ""}.`,
     });

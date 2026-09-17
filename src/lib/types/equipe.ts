@@ -1,6 +1,6 @@
 import type { Centavos, DataISO, ID } from "./comum";
 
-export type Perfil = "admin" | "vendedor" | "financeiro";
+export type Perfil = "admin" | "vendedor" | "cobrador";
 export type Setor = "vendas" | "financeiro" | "administracao";
 
 export const ROTULO_SETOR: Record<Setor, string> = {
@@ -25,7 +25,8 @@ export interface Colaborador {
   entrouEm: DataISO;
   /** Cobrador: vendedores cujos pedidos ele pode cobrar. Vazio nos demais. */
   vendedoresAtribuidos: ID[];
-  nivelId: ID;
+  /** Nulo enquanto não há trilha de níveis cadastrada. */
+  nivelId: ID | null;
   /** Pontos acumulados na trilha de níveis. */
   pontos: number;
 

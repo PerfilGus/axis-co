@@ -2,7 +2,8 @@
 
 import { ROTULO_SETOR } from "@/lib/types";
 import { formatBps, formatBRL, formatData, formatTelefone } from "@/lib/format";
-import { progressoNivel, useEquipe } from "@/lib/providers/equipe";
+import { useEquipe } from "@/lib/providers/equipe";
+import { progressoNivel } from "@/lib/dominio/equipe";
 import { useSessao } from "@/lib/providers/sessao";
 import { CabecalhoPagina } from "@/components/layout/cabecalho-pagina";
 import { Card, CardConteudo, CardDescricao, CardTitulo } from "@/components/ui/card";

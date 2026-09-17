@@ -23,8 +23,8 @@ export function ehVenda(pedido: Pedido): boolean {
 }
 
 /**
- * O dia cai no período? Período que chega a hoje fica aberto no fim: o pedido
- * criado nesta sessão pode ter data depois do "hoje" dos mocks.
+ * O dia cai no período? Período que chega a hoje fica aberto no fim, para não
+ * perder o que entrou depois de a tela abrir.
  */
 export function noPeriodo(dia: string, de: string, ate: string): boolean {
   return dia >= de && (dia <= ate || ate >= hoje());

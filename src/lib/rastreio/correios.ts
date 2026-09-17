@@ -12,8 +12,8 @@ import type { StatusRastreio } from "@/lib/types";
  *   "entregue". A negação é checada antes de qualquer teste de entrega, senão
  *   um insucesso real aparece como entregue e some da seção de falhas.
  *
- * Aqui a função ainda não tem quem a chame — a consulta real entra na fase de
- * backend. Está portada agora para a regra não se perder no caminho.
+ * Aqui a função ainda não tem quem a chame — a consulta real entra com a
+ * integração dos Correios. Está portada para a regra não se perder no caminho.
  */
 export interface EventoSRO {
   codigo?: string;

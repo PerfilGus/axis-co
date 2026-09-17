@@ -9,7 +9,7 @@ import { useSessao } from "@/lib/providers/sessao";
 import { usePedidos } from "@/lib/providers/pedidos";
 import { useEquipe } from "@/lib/providers/equipe";
 import { useCadastros } from "@/lib/providers/cadastros";
-import { rotuloCriativo } from "@/lib/mock/marketing";
+import { rotuloCriativo } from "@/lib/criativos";
 import type { Colaborador, Criativo, Kit, LinhaWhatsApp } from "@/lib/types";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";

@@ -4,26 +4,66 @@ Front-end de um sistema de gestão para venda D2C de suplementos no modelo PAD
 (pagamento na entrega). Funil: Meta Ads → WhatsApp → fechamento por telefone →
 envio pelos Correios → cobrança após a entrega.
 
+## Contexto do projeto
+
+- Sistema interno de gestão da Axis (venda D2C de suplementos): pedidos,
+  rastreios, cobrança, fornecedores, marketing, metas e bônus.
+- Stack: Next.js + TypeScript + Tailwind + shadcn/ui, Neon (Postgres) + Drizzle,
+  deploy na Vercel.
+- Usuários: administrador (dono), vendedores e cobradores. Uso intenso no
+  celular (iPhone, app instalado na tela de início como PWA).
+- Identidade visual: fonte Space Grotesk, fundo #121212, destaque amarelo
+  #FFBE00, textos #EAEAEA e #A9A9A7.
+- Integrações de logística (Correios/VendLiber) ficam para depois. Não
+  implementar agora.
+- Existe outro projeto na Vercel (axis-tracking) que não pode ser alterado.
+
+## Regras de trabalho
+
+1. Ao iniciar uma fase: ler o código relevante, apresentar um plano curto e
+   esperar minha aprovação.
+2. Mudanças pequenas e verificáveis. Não alterar visual nem regra de negócio
+   fora do escopo da fase sem perguntar.
+3. Ao terminar uma fase: build, lint e typecheck sem erros; checklist de testes
+   manuais (desktop e iPhone); commit descritivo. Depois, parar.
+4. Confirmar comigo antes de ações irreversíveis: push, deploy em produção,
+   migrations no banco de produção, exclusão de dados.
+5. Nunca commitar segredos. Toda variável nova vai para .env.example (sem valor)
+   e você me avisa para cadastrar na Vercel.
+6. Datas e horas sempre em America/Sao_Paulo. Valores em BRL.
+7. Um único componente reutilizável por padrão (filtro de período, tabela,
+   painel lateral, diálogo de confirmação, busca). Nada duplicado.
+8. Todo evento relevante (login, criação, edição, mudança de status, pagamento,
+   frustração, agendamento, solicitação de alteração, aprovação/recusa,
+   arquivamento, exclusão) grava numa tabela única de atividades com: usuário
+   responsável, papel, ação, entidade, data/hora e valores antes/depois quando
+   aplicável. Essa tabela alimenta a linha do tempo, as notificações e a
+   auditoria da LGPD.
+9. Mobile não é adaptação posterior: todo componente novo ou alterado precisa
+   funcionar em tela de iPhone.
+10. Responder em português, usando "você".
+
 ## Stack
 
 Next.js 16 (App Router) · TypeScript · Tailwind v4 · componentes no estilo
 shadcn/ui, reestilizados · Phosphor Icons (peso `fill`, variante `/ssr`).
-Backend futuro: Neon Postgres via Drizzle, na Vercel.
+Neon Postgres (região gru1) via Drizzle · Better Auth (argon2id, TOTP, plugin
+admin) · Vercel Blob privado · Zod nas ações. Projeto Vercel: `axis-sistema`
+(time axis-company1), separado do axis-tracking.
 
 ## Estado atual
 
-Fases 1 (fundação), 2 (operação), 3 (configurações e equipe), 4 (financeiro e
-marketing) e 5 (Minha área) concluídas.
+Protótipo (fases 1 a 5 do front) concluído. Fase de backend 1 — banco real,
+login e LGPD — concluída: tudo lê e grava no Neon, não existe mock nem dado
+fictício, e o único seed é o administrador inicial (`npm run db:seed`).
 
-Nada é persistido e nenhuma integração é real. Pedidos, cadastros, equipe,
-financeiro e Meta Ads vivem em memória nos providers, semeados de
-`src/lib/mock/` — recarregar a página volta ao mock. Fotos e ícones enviados
-viram URL local da aba.
+Integrações ainda não reais: Correios/VendLiber (o código de rastreio fica
+vazio após autorizar; "Atualizar rastreios" responde sem novidade) e API do
+Meta Ads (`lancamentos` chega vazio; só o lançamento manual por dia existe).
+O CEP é real (ViaCEP, via servidor).
 
-O mock tem histórico desde 1º de março: pedidos fechados gerados dia a dia
-(`gerarHistorico`) somados aos 102 da operação corrente, e Meta Ads por
-criativo no mesmo volume. Março é mês de partida; os comparativos começam em
-abril. A fonte `api` do Meta Ads é simulada.
+Preview, produção e desenvolvimento usam hoje o mesmo banco Neon e o mesmo
+store do Blob. Separar antes de ir para produção.
 
 ## Mapa do código
 
@@ -33,22 +73,37 @@ abril. A fonte `api` do Meta Ads é simulada.
   agrupamento, cópia inteligente, CSV, mapa evento SRO → status e a atualização
   simulada. O levantamento do que foi portado, ajustado ou removido está em
   `referencia/axis-tracking/INVENTARIO.md` — consulte antes de mexer nessa aba.
-- `src/lib/mock/` — dados fictícios determinísticos (`rng` com seed fixo, e
-  `HOJE` congelado). Nunca use `Math.random` nem `new Date()` aqui: quebra a
-  hidratação.
+- `src/lib/servidor/` — só servidor (`server-only`). `schema.ts` (Drizzle, chaves
+  camelCase gravadas em snake_case; `timestamptz` trafega como ISO -03:00),
+  `db.ts` (Pool do Neon, com transação), `auth.ts` (Better Auth: sessão sem
+  expiração por inatividade, bloqueio de 5 falhas por 15 min, auditoria de
+  login), `sessao.ts` (`contextoDaSessao`, pendências de primeiro acesso,
+  `exigirUsuario`/`exigir`/`executar`), `dados.ts` (o que cada perfil recebe ao
+  abrir o sistema, já recortado e mascarado), `atividades.ts` (tabela única de
+  atividades), `arquivos.ts` (Blob privado) e `repositorio/pedidos.ts` (o
+  agregado pedido e a linha do tempo, que é a própria tabela de atividades).
+- `src/app/acoes/` — server actions. Toda ação: `executar` → `exigirUsuario` →
+  `exigir(permissão)` → Zod → transação que grava o dado **e** a atividade →
+  devolve o estado novo. `validacao.ts` guarda os schemas comuns.
+- `src/lib/dominio/` — regras puras de mudança (pedidos, trilha de níveis). O
+  servidor executa sobre o que leu do banco; a tela nunca decide estado final.
+- `src/lib/permissoes.ts` — matriz de permissões, fonte única para proxy,
+  ações, rotas de API e interface.
+- `src/proxy.ts` — CSP com nonce e headers de segurança; sessão e perfil por rota.
+- `src/app/api/anexos/[id]` — única leitura de arquivo: confere sessão e
+  permissão, registra visualização de anexo de pedido, responde sem cache.
+- `drizzle/` — migrations versionadas (`npm run db:gerar`, `npm run db:migrar`).
 - `src/lib/nav.ts` — mapa de navegação e permissões por perfil.
 - `src/lib/status.ts` — rótulos e tons de status. **As cores de status são
   fixas**: nunca acompanham o destaque escolhido pelo usuário. As de rastreio
   são os valores exatos do axis-tracking, nas variáveis `--rt-*`.
-- `src/lib/providers/` — sessão simulada, aparência e o estado da sessão.
-  `pedidos.tsx` concentra a mutação de pedidos; `cadastros.tsx` a de produtos,
-  kits, criativos, linhas e bancos; `equipe.tsx` a de colaboradores, metas,
-  níveis, conquistas, bônus e fechamentos pagos. É o que vira backend depois.
-  Telas leem cadastros e nomes daqui, nunca direto do mock — o mock é semente.
-  `financeiro.tsx` guarda parâmetros e pagamentos do fornecedor, faturas,
-  alíquotas, despesas fixas e dívidas; `marketing.tsx` o Meta Ads (detalhe da
-  API e dias lançados à mão). Os dois guardam só o que é lançado: previsto, DRE
-  e análises são recalculados.
+- `src/lib/providers/` — estado da interface. Nascem com o que
+  `(app)/layout.tsx` carregou do banco (`ProvedoresDados`) e cada mutação é
+  assíncrona: chama a server action por `chamar` (que mostra o erro e devolve
+  `null`) e troca o estado pelo que o servidor devolveu. Telas conferem o
+  retorno antes de mostrar sucesso. `sessao.tsx` expõe o usuário logado e os
+  atalhos de `lib/permissoes.ts`. `financeiro.tsx` e `marketing.tsx` guardam só
+  o que é lançado: previsto, DRE e análises são recalculados.
   Ordem de montagem: Equipe > Sessão > Cadastros > Pedidos > Financeiro > Marketing.
 - `src/lib/filas.ts` — filas de autorização e cobrança. O contador da subaba e
   a lista que ela abre saem daqui, para nunca divergirem.
@@ -79,8 +134,14 @@ abril. A fonte `api` do Meta Ads é simulada.
   (sem valor confirmado, herda a do mês anterior como estimada) e previsão de
   entrada em 30 dias. Comissões vêm de `fechamentosDaCompetencia`, o mesmo da
   tela de comissões.
-- `src/lib/cep.ts` — busca de endereço simulada, com a assinatura de uma
-  chamada de rede.
+- `src/lib/cep.ts` — busca de endereço pelo ViaCEP (ação `acoes/cep.ts`).
+- `src/lib/imagem.ts` — compressão no navegador (WebP, até 1600px; JPEG onde o
+  Safari não gera WebP). `EnvioArquivo` e `EnvioImagem` já comprimem.
+- `src/lib/senha.ts` — política de senha (tela e servidor) e senha provisória.
+- `src/components/acesso/` e `(acesso)/` — login, primeiro acesso (troca de
+  senha → termo → 2FA para admin) e política de privacidade.
+- `src/components/lgpd/textos.tsx` — termo e política, RASCUNHO para revisão
+  jurídica. Mudar o termo exige subir `VERSAO_TERMO` em `lib/servidor/sessao.ts`.
 - `src/components/ui/` — primitivos reestilizados.
 - `src/components/shared/` — componentes de produto reutilizáveis.
 
@@ -102,6 +163,14 @@ abril. A fonte `api` do Meta Ads é simulada.
 - Depois de muitas edições seguidas, o Turbopack pode servir chunk velho e
   acusar erro inexistente. `rm -rf .next` e suba o servidor de novo antes de
   investigar.
+- LGPD: CPF e telefone sempre mascarados em listas (`mascararPedido`); o dado
+  completo só por `revelarDados`, que registra a visualização. Campo livre sobre
+  cliente leva `AvisoSaude`. Arquivo nunca tem URL pública: sempre
+  `/api/anexos/[id]`.
+- Toda variável nova vai para `.env.example`. O seed usa `ADMIN_INICIAL_*`, que
+  não precisam existir na Vercel.
+- Mudou o schema: `npm run db:gerar` e revise o SQL antes de `db:migrar`. Em
+  banco de produção, só com confirmação.
 
 ## Antes de entregar
 

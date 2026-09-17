@@ -3,7 +3,6 @@
 import { useState } from "react";
 import type { Pedido } from "@/lib/types";
 import { formatBRL, parseBRL } from "@/lib/format";
-import { useSessao } from "@/lib/providers/sessao";
 import { usePedidos } from "@/lib/providers/pedidos";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
@@ -15,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Campo } from "@/components/ui/label";
 import { Input, Textarea } from "@/components/ui/input";
+import { AvisoSaude } from "@/components/shared/aviso-saude";
 import { ControleSegmentado } from "@/components/shared/controles";
 import { toast } from "@/components/ui/toast";
 
@@ -42,7 +42,6 @@ export function ModalSolicitacao({
   aberto: boolean;
   aoFechar: () => void;
 }) {
-  const { usuario } = useSessao();
   const { solicitarAjuste } = usePedidos();
   const [tipo, setTipo] = useState<TipoSolicitacao>("alteracao_cadastral");
   const [motivo, setMotivo] = useState("");
@@ -51,7 +50,7 @@ export function ModalSolicitacao({
 
   const valorCentavos = parseBRL(valor);
 
-  function enviar() {
+  async function enviar() {
     if (motivo.trim().length < 5) {
       setErro("Explique o que precisa mudar: é o que o Admin vai ler.");
       return;
@@ -61,15 +60,12 @@ export function ModalSolicitacao({
       return;
     }
 
-    solicitarAjuste(
-      pedido.id,
-      {
-        tipo,
-        valorSolicitado: tipo === "desconto" ? valorCentavos! : pedido.valorTotal,
-        motivo: motivo.trim(),
-      },
-      usuario.id,
-    );
+    const enviado = await solicitarAjuste(pedido.id, {
+      tipo,
+      valorSolicitado: tipo === "desconto" ? valorCentavos! : pedido.valorTotal,
+      motivo: motivo.trim(),
+    });
+    if (!enviado) return;
 
     toast.success("Solicitação enviada ao Admin", {
       description: `O pedido ${pedido.codigo} fica marcado até a decisão.`,
@@ -131,6 +127,7 @@ export function ModalSolicitacao({
               placeholder="Cliente passou o número do endereço errado: é 482, não 428."
             />
           </Campo>
+          <AvisoSaude />
         </div>
 
         <ModalRodape>

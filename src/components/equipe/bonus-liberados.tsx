@@ -99,9 +99,9 @@ export function BonusLiberados({
         icone="pix"
         rotuloConfirmar="Pix enviado"
         aoCancelar={() => setConfirmando(null)}
-        aoConfirmar={() => {
+        aoConfirmar={async () => {
           if (!confirmando) return;
-          confirmarBonus(confirmando.id);
+          if (!(await confirmarBonus(confirmando.id))) return;
           toast.success("Bônus pago", {
             description: `${formatBRL(confirmando.valor)} para ${alvo?.nome ?? "o colaborador"}.`,
           });

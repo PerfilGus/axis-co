@@ -490,9 +490,9 @@ export default function PaginaFinanceiroFornecedor() {
         icone="excluir"
         rotuloConfirmar="Remover pagamento"
         aoCancelar={() => setRemovendo(null)}
-        aoConfirmar={() => {
+        aoConfirmar={async () => {
           if (!removendo) return;
-          excluirPagamentoFornecedor(removendo.id);
+          if (!(await excluirPagamentoFornecedor(removendo.id))) return;
           toast.success("Pagamento removido", { description: formatBRL(removendo.valor) });
           setRemovendo(null);
         }}

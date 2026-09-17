@@ -15,7 +15,9 @@ import { calcularFechamento, comissionavel } from "@/lib/comissoes";
 import { desempenhoNo } from "@/lib/desempenho";
 import { descreverRecompensa, formatarAlvo, medirMeta } from "@/lib/metas";
 import { competenciaAtual, janelaDaMeta } from "@/lib/periodos";
-import { progressoNivel, useEquipe } from "@/lib/providers/equipe";
+import { useEquipe } from "@/lib/providers/equipe";
+import { progressoNivel } from "@/lib/dominio/equipe";
+import { AcessoColaborador } from "./acesso-colaborador";
 import { usePedidos } from "@/lib/providers/pedidos";
 import { useSessao } from "@/lib/providers/sessao";
 import { Icone } from "@/components/icone";
@@ -104,10 +106,11 @@ function Conteudo({ colaborador, aoEditar }: { colaborador: Colaborador; aoEdita
     .sort((a, b) => b.desbloqueadaEm.localeCompare(a.desbloqueadaEm))
     .slice(0, 5);
 
-  function registrar() {
+  async function registrar() {
     const conquista = conquistas.find((c) => c.id === conquistaId);
     if (!conquista) return;
-    const liberados = registrarConquista(colaborador.id, conquista.id);
+    const liberados = await registrarConquista(colaborador.id, conquista.id);
+    if (!liberados) return;
     setConquistaId("");
     if (liberados.length > 0) {
       setPremiado(true);
@@ -247,6 +250,12 @@ function Conteudo({ colaborador, aoEditar }: { colaborador: Colaborador; aoEdita
             </ul>
           )}
         </Bloco>
+
+        {ehAdmin && colaborador.perfil !== "admin" && (
+          <Bloco titulo="Acesso">
+            <AcessoColaborador colaborador={colaborador} />
+          </Bloco>
+        )}
 
         <Bloco titulo="Remuneração">
           <div className="rounded-[var(--radius-card-sm)] border border-border px-4 py-1.5">

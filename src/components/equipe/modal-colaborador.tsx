@@ -28,6 +28,7 @@ import { EnvioImagem } from "@/components/shared/envio-imagem";
 import { ModalConfirmacao } from "@/components/shared/modal-confirmacao";
 import { SelecaoMultipla } from "@/components/shared/selecao-multipla";
 import { CampoAtivo } from "@/components/config/modais-catalogo";
+import { gerarSenhaProvisoria, problemaDaSenha } from "@/lib/senha";
 
 const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -77,6 +78,8 @@ function Formulario({ colaborador, aoFechar }: { colaborador: Colaborador | null
   const [frustrado, setFrustrado] = useState(bpsParaCampo(colaborador?.frustradoBps ?? null));
   const [vendedores, setVendedores] = useState(colaborador?.vendedoresAtribuidos ?? []);
   const [ativo, setAtivo] = useState(colaborador?.ativo ?? true);
+  const [senha, setSenha] = useState(() => (colaborador ? "" : gerarSenhaProvisoria()));
+  const [salvando, setSalvando] = useState(false);
   const [erros, setErros] = useState<Record<string, string>>({});
   const [confirmandoReducao, setConfirmandoReducao] = useState(false);
 
@@ -119,6 +122,10 @@ function Formulario({ colaborador, aoFechar }: { colaborador: Colaborador | null
     const diaNumero = Number(dia);
     if (!(diaNumero >= 1 && diaNumero <= 28)) e.dia = "Um dia de 1 a 28.";
     if (!(comissaoBps > 0) || comissaoBps > 10_000) e.comissao = "Informe a % de comissão.";
+    if (!colaborador) {
+      const problema = problemaDaSenha(senha, email.trim());
+      if (problema) e.senha = problema;
+    }
     if (setor === "vendas" && (frustrado.trim() === "" || frustradoBps < 0 || frustradoBps >= 10_000)) {
       e.frustrado = "Informe a % de frustrado, de 0 a 99.";
     }
@@ -136,13 +143,15 @@ function Formulario({ colaborador, aoFechar }: { colaborador: Colaborador | null
     salvar();
   }
 
-  function salvar() {
-    const salvo = salvarColaborador({
+  async function salvar() {
+    setSalvando(true);
+    const salvo = await salvarColaborador(
+      {
       id: colaborador?.id,
       nome: nome.trim(),
       email: email.trim().toLowerCase(),
       telefone: digitos(telefone),
-      setor,
+      setor: setor === "financeiro" ? "financeiro" : "vendas",
       avatarUrl,
       ativo,
       vendedoresAtribuidos: vendedores,
@@ -151,11 +160,16 @@ function Formulario({ colaborador, aoFechar }: { colaborador: Colaborador | null
       chavePix: pix.trim() || null,
       comissaoBps,
       frustradoBps: setor === "vendas" ? frustradoBps : null,
-    });
+      },
+      colaborador ? null : senha,
+    );
+    setSalvando(false);
+    if (!salvo) return;
     toast.success(colaborador ? "Colaborador atualizado" : "Colaborador cadastrado", {
       description: colaborador
         ? `As regras novas de ${salvo.apelido} já valem para o fechamento em aberto.`
-        : `${salvo.nome} entra com login ${salvo.email}.`,
+        : `Passe para ${salvo.apelido} o login ${salvo.email} e a senha provisória. Ela será trocada no primeiro acesso.`,
+      duration: 12_000,
     });
     aoFechar();
   }
@@ -183,6 +197,33 @@ function Formulario({ colaborador, aoFechar }: { colaborador: Colaborador | null
                   placeholder="nome@axis.com.br"
                 />
               </Campo>
+              {!colaborador && (
+                <Campo
+                  rotulo="Senha provisória"
+                  obrigatorio
+                  erro={erros.senha}
+                  ajuda="Anote e passe à pessoa. Ela troca no primeiro acesso."
+                >
+                  <div className="flex gap-2">
+                    <Input
+                      value={senha}
+                      onChange={(e) => setSenha(e.target.value)}
+                      className="tabular"
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    <Botao
+                      type="button"
+                      variante="secundaria"
+                      tamanho="icone"
+                      aria-label="Gerar outra senha"
+                      onClick={() => setSenha(gerarSenhaProvisoria())}
+                    >
+                      <Icone nome="atualizar" size={16} />
+                    </Botao>
+                  </div>
+                </Campo>
+              )}
               <Campo rotulo="Telefone" ajuda="Opcional.">
                 <Input
                   value={telefone}
@@ -337,7 +378,7 @@ function Formulario({ colaborador, aoFechar }: { colaborador: Colaborador | null
           <Botao variante="secundaria" onClick={aoFechar}>
             Cancelar
           </Botao>
-          <Botao variante="principal" onClick={tentarSalvar}>
+          <Botao variante="principal" onClick={tentarSalvar} disabled={salvando}>
             <Icone nome="check" size={15} />
             {colaborador ? "Salvar colaborador" : "Cadastrar colaborador"}
           </Botao>

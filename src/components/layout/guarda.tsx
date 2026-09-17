@@ -10,8 +10,8 @@ import { EstadoVazio } from "@/components/shared/estado-vazio";
 /**
  * Barra o acesso direto pela URL a telas fora do perfil.
  *
- * É uma barreira de interface, não de segurança: quando o backend entrar, a
- * mesma decisão passa a ser tomada também no servidor.
+ * É cortesia de interface: a proteção de verdade está no proxy (rota) e em
+ * cada server action (dado), com a mesma matriz de `lib/permissoes.ts`.
  */
 export function Guarda({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

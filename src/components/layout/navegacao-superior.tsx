@@ -20,8 +20,9 @@ import {
   MenuSeparador,
 } from "@/components/ui/dropdown-menu";
 import { Logo } from "./logo";
-import { SeletorPerfil } from "./seletor-perfil";
-import { progressoNivel as medirNivel, useEquipe } from "@/lib/providers/equipe";
+import { BotaoSair } from "./botao-sair";
+import { useEquipe } from "@/lib/providers/equipe";
+import { progressoNivel as medirNivel } from "@/lib/dominio/equipe";
 
 /**
  * Navegação superior em dois níveis. Não existe barra lateral em tela nenhuma:
@@ -81,8 +82,6 @@ export function NavegacaoSuperior() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <SeletorPerfil />
-
           <Botao
             variante="secundaria"
             tamanho="icone"
@@ -166,11 +165,14 @@ export function NavegacaoSuperior() {
                   Aparência
                 </Link>
               </MenuItem>
-              <MenuSeparador />
-              <MenuItem disabled>
-                <Icone nome="sair" size={15} />
-                Sair
+              <MenuItem asChild>
+                <Link href="/configuracoes/seguranca">
+                  <Icone nome="cadeado" size={15} />
+                  Segurança da conta
+                </Link>
               </MenuItem>
+              <MenuSeparador />
+              <BotaoSair comoItemDeMenu />
             </MenuConteudo>
           </Menu>
         </div>

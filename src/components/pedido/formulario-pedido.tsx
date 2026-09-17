@@ -4,18 +4,10 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { Centavos } from "@/lib/types";
-import {
-  digitos,
-  formatBRL,
-  mascaraCEP,
-  mascaraCPF,
-  mascaraTelefone,
-  parseBRL,
-} from "@/lib/format";
-import { buscarCep, cepValido } from "@/lib/cep";
+import { formatBRL, parseBRL } from "@/lib/format";
 import { useSessao } from "@/lib/providers/sessao";
 import { usePedidos, type RascunhoPedido } from "@/lib/providers/pedidos";
-import { opcoesCriativo } from "@/lib/mock/marketing";
+import { opcoesCriativo } from "@/lib/criativos";
 import { useCadastros } from "@/lib/providers/cadastros";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
@@ -31,12 +23,15 @@ import {
   SelecaoValor,
 } from "@/components/ui/select";
 import { EnvioArquivo, type ArquivoSelecionado } from "@/components/shared/envio-arquivo";
+import { AvisoSaude } from "@/components/shared/aviso-saude";
 import { toast } from "@/components/ui/toast";
-
-const UFS = [
-  "AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","MS","MT","PA","PB",
-  "PE","PI","PR","RJ","RN","RO","RR","RS","SC","SE","SP","TO",
-];
+import {
+  CamposCliente,
+  CLIENTE_VAZIO,
+  clienteDoForm,
+  validarCliente,
+  type DadosClienteForm,
+} from "./campos-cliente";
 
 type Erros = Record<string, string>;
 
@@ -88,17 +83,7 @@ export function FormularioPedido() {
   );
   const [salvando, iniciarSalvamento] = useTransition();
 
-  const [nome, setNome] = useState("");
-  const [telefone, setTelefone] = useState("");
-  const [cpf, setCpf] = useState("");
-  const [cep, setCep] = useState("");
-  const [logradouro, setLogradouro] = useState("");
-  const [numero, setNumero] = useState("");
-  const [complemento, setComplemento] = useState("");
-  const [bairro, setBairro] = useState("");
-  const [cidade, setCidade] = useState("");
-  const [uf, setUf] = useState("");
-  const [referencia, setReferencia] = useState("");
+  const [cliente, setCliente] = useState<DadosClienteForm>(CLIENTE_VAZIO);
 
   const [kitId, setKitId] = useState("");
   const [criativoId, setCriativoId] = useState("");
@@ -114,7 +99,6 @@ export function FormularioPedido() {
 
   const [observacoes, setObservacoes] = useState("");
 
-  const [buscandoCep, setBuscandoCep] = useState(false);
   const [erros, setErros] = useState<Erros>({});
 
   const kit = kits.find((k) => k.id === kitId) ?? null;
@@ -126,44 +110,8 @@ export function FormularioPedido() {
         : kit.precoTabela + ajusteCentavos
       : (kit?.precoTabela ?? null);
 
-  async function preencherPeloCep() {
-    if (!cepValido(cep)) {
-      setErros((e) => ({ ...e, cep: "CEP precisa ter 8 dígitos." }));
-      return;
-    }
-    setBuscandoCep(true);
-    const resultado = await buscarCep(cep);
-    setBuscandoCep(false);
-
-    if (!resultado.ok) {
-      setErros((e) => ({ ...e, cep: resultado.erro }));
-      return;
-    }
-    setErros((e) => {
-      const resto = { ...e };
-      delete resto.cep;
-      return resto;
-    });
-    setLogradouro(resultado.endereco.logradouro);
-    setBairro(resultado.endereco.bairro);
-    setCidade(resultado.endereco.cidade);
-    setUf(resultado.endereco.uf);
-    toast.success("Endereço preenchido", {
-      description: "Confira o número e o complemento com o cliente.",
-    });
-  }
-
   function validar(): Erros {
-    const e: Erros = {};
-    if (nome.trim().length < 3) e.nome = "Informe o nome completo do cliente.";
-    if (digitos(telefone).length < 10) e.telefone = "Telefone com DDD, 10 ou 11 dígitos.";
-    if (cpf && digitos(cpf).length !== 11) e.cpf = "CPF precisa ter 11 dígitos.";
-    if (!cepValido(cep)) e.cep = "Informe um CEP de 8 dígitos.";
-    if (!logradouro.trim()) e.logradouro = "Informe a rua.";
-    if (!numero.trim()) e.numero = "Informe o número.";
-    if (!bairro.trim()) e.bairro = "Informe o bairro.";
-    if (!cidade.trim()) e.cidade = "Informe a cidade.";
-    if (!uf) e.uf = "Informe a UF.";
+    const e: Erros = { ...validarCliente(cliente) } as Erros;
     if (!kitId) e.kit = "Escolha o kit fechado com o cliente.";
     if (!criativoId) e.criativo = "Escolha o criativo de origem.";
 
@@ -201,22 +149,7 @@ export function FormularioPedido() {
     }
 
     const rascunho: RascunhoPedido = {
-      cliente: {
-        nome: nome.trim(),
-        telefone: digitos(telefone),
-        cpf: cpf ? digitos(cpf) : null,
-        endereco: {
-          cep: digitos(cep),
-          logradouro: logradouro.trim(),
-          numero: numero.trim(),
-          complemento: complemento.trim() || null,
-          bairro: bairro.trim(),
-          cidade: cidade.trim(),
-          uf,
-          referencia: referencia.trim() || null,
-        },
-        observacoes: null,
-      },
+      cliente: clienteDoForm(cliente),
       kitId,
       criativoId,
       observacoes,
@@ -225,24 +158,14 @@ export function FormularioPedido() {
         comAjuste && ajusteCentavos
           ? { tipo: tipoAjuste, valor: ajusteCentavos, motivo: motivoAjuste.trim() }
           : null,
-      anexos: [
-        ...print.map((a) => ({
-          nome: a.nome,
-          tipo: "print_confirmacao" as const,
-          tamanhoBytes: a.tamanho,
-          mime: a.tipo || "image/png",
-        })),
-        ...audio.map((a) => ({
-          nome: a.nome,
-          tipo: "audio_confirmacao" as const,
-          tamanhoBytes: a.tamanho,
-          mime: a.tipo || "audio/ogg",
-        })),
-      ],
     };
 
-    iniciarSalvamento(() => {
-      const pedido = criar(rascunho, usuario.id);
+    iniciarSalvamento(async () => {
+      const pedido = await criar(rascunho, {
+        print: print.map((a) => a.arquivo),
+        audio: confirmacaoPorTexto ? [] : audio.map((a) => a.arquivo),
+      });
+      if (!pedido) return;
       toast.success(`Pedido ${pedido.codigo} criado`, {
         description: comAjuste
           ? "Segue com ajuste pendente até o Admin decidir."
@@ -258,98 +181,19 @@ export function FormularioPedido() {
         titulo="Cliente"
         descricao="Quem recebe e paga na entrega. Confira o endereço com ele na ligação."
       >
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Campo rotulo="Nome completo" obrigatorio erro={erros.nome} className="lg:col-span-2">
-            <Input
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-              placeholder="Maria de Souza"
-              autoComplete="off"
-            />
-          </Campo>
-          <Campo rotulo="Telefone" obrigatorio erro={erros.telefone}>
-            <Input
-              value={telefone}
-              onChange={(e) => setTelefone(mascaraTelefone(e.target.value))}
-              placeholder="(11) 98765-4321"
-              inputMode="numeric"
-            />
-          </Campo>
-          <Campo rotulo="CPF" ajuda="Opcional, mas ajuda na cobrança." erro={erros.cpf}>
-            <Input
-              value={cpf}
-              onChange={(e) => setCpf(mascaraCPF(e.target.value))}
-              placeholder="000.000.000-00"
-              inputMode="numeric"
-            />
-          </Campo>
-
-          <Campo rotulo="CEP" obrigatorio erro={erros.cep}>
-            <div className="flex gap-2">
-              <Input
-                value={cep}
-                onChange={(e) => setCep(mascaraCEP(e.target.value))}
-                onBlur={() => cepValido(cep) && preencherPeloCep()}
-                placeholder="01310-100"
-                inputMode="numeric"
-              />
-              <Botao
-                variante="secundaria"
-                tamanho="icone"
-                aria-label="Buscar endereço pelo CEP"
-                onClick={preencherPeloCep}
-                disabled={buscandoCep}
-              >
-                <Icone nome={buscandoCep ? "atualizar" : "busca"} />
-              </Botao>
-            </div>
-          </Campo>
-
-          <Campo rotulo="Rua" obrigatorio erro={erros.logradouro} className="lg:col-span-2">
-            <Input value={logradouro} onChange={(e) => setLogradouro(e.target.value)} />
-          </Campo>
-          <Campo rotulo="Número" obrigatorio erro={erros.numero}>
-            <Input value={numero} onChange={(e) => setNumero(e.target.value)} />
-          </Campo>
-          <Campo rotulo="Complemento" erro={erros.complemento}>
-            <Input
-              value={complemento}
-              onChange={(e) => setComplemento(e.target.value)}
-              placeholder="Apto 42, bloco B"
-            />
-          </Campo>
-          <Campo rotulo="Bairro" obrigatorio erro={erros.bairro}>
-            <Input value={bairro} onChange={(e) => setBairro(e.target.value)} />
-          </Campo>
-          <Campo rotulo="Cidade" obrigatorio erro={erros.cidade}>
-            <Input value={cidade} onChange={(e) => setCidade(e.target.value)} />
-          </Campo>
-          <Campo rotulo="UF" obrigatorio erro={erros.uf}>
-            <Selecao value={uf} onValueChange={setUf}>
-              <SelecaoGatilho>
-                <SelecaoValor placeholder="Escolha" />
-              </SelecaoGatilho>
-              <SelecaoConteudo>
-                {UFS.map((sigla) => (
-                  <SelecaoItem key={sigla} value={sigla}>
-                    {sigla}
-                  </SelecaoItem>
-                ))}
-              </SelecaoConteudo>
-            </Selecao>
-          </Campo>
-          <Campo
-            rotulo="Ponto de referência"
-            ajuda="Ajuda o carteiro a achar o endereço."
-            className="lg:col-span-3"
-          >
-            <Input
-              value={referencia}
-              onChange={(e) => setReferencia(e.target.value)}
-              placeholder="Portão verde, ao lado da padaria"
-            />
-          </Campo>
-        </div>
+        <CamposCliente
+          dados={cliente}
+          aoMudar={setCliente}
+          erros={erros}
+          aoLimparErro={(campo, mensagem) =>
+            setErros((atual) => {
+              const resto = { ...atual };
+              if (mensagem) resto[campo] = mensagem;
+              else delete resto[campo];
+              return resto;
+            })
+          }
+        />
       </Secao>
 
       <Secao
@@ -485,7 +329,7 @@ export function FormularioPedido() {
             </Label>
             <EnvioArquivo
               aceita="image/*"
-              rotulo="Arraste o print da conversa"
+              rotulo="Escolha o print da conversa"
               aoSelecionar={setPrint}
             />
             {erros.print && (
@@ -506,7 +350,7 @@ export function FormularioPedido() {
             >
               <EnvioArquivo
                 aceita="audio/*"
-                rotulo="Arraste o áudio do cliente"
+                rotulo="Escolha o áudio do cliente"
                 aoSelecionar={setAudio}
               />
             </div>
@@ -545,6 +389,7 @@ export function FormularioPedido() {
           onChange={(e) => setObservacoes(e.target.value)}
           placeholder="Cliente pediu para entregar depois das 14h."
         />
+        <AvisoSaude />
       </Secao>
 
       <div className="flex flex-wrap items-center justify-end gap-2 pb-2">

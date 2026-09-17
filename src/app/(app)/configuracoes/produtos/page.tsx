@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import type { Kit, Produto } from "@/lib/types";
 import { formatBRL, formatNumero } from "@/lib/format";
 import { useCadastros } from "@/lib/providers/cadastros";
-import { potesDoKit } from "@/lib/mock/catalogo";
+import { potesDoKit } from "@/lib/catalogo";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";

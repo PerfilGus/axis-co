@@ -1,0 +1,6 @@
+.env*
+!.env.example
+referencia
+.claude
+.agents
+skills-lock.json

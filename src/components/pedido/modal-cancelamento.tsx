@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import type { Pedido } from "@/lib/types";
-import { useSessao } from "@/lib/providers/sessao";
 import { usePedidos } from "@/lib/providers/pedidos";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
@@ -14,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Campo } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/input";
+import { AvisoSaude } from "@/components/shared/aviso-saude";
 import { toast } from "@/components/ui/toast";
 
 const SUGESTOES = [
@@ -36,23 +36,22 @@ export function ModalCancelamento({
   aberto: boolean;
   aoFechar: () => void;
 }) {
-  const { usuario } = useSessao();
   const { cancelar } = usePedidos();
   const [motivo, setMotivo] = useState("");
   const [erro, setErro] = useState<string | null>(null);
 
   const varios = pedidos.length > 1;
 
-  function confirmar() {
+  async function confirmar() {
     if (motivo.trim().length < 5) {
       setErro("O motivo fica registrado na linha do tempo. Escreva o que houve.");
       return;
     }
-    const total = cancelar(
+    const total = await cancelar(
       pedidos.map((p) => p.id),
       motivo.trim(),
-      usuario.id,
     );
+    if (total === null) return;
     toast(
       total === 1 ? "Pedido cancelado" : `${total} pedidos cancelados`,
       { description: "Custo zero: nada chegou a ser enviado." },
@@ -87,6 +86,7 @@ export function ModalCancelamento({
               placeholder="Cliente desistiu antes do envio."
             />
           </Campo>
+          <AvisoSaude />
 
           <div className="flex flex-wrap gap-2">
             {SUGESTOES.map((sugestao) => (

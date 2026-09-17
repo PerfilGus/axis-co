@@ -22,7 +22,7 @@ import { toast } from "@/components/ui/toast";
 type Recorte = "corte" | "todos";
 
 export default function PaginaAutorizar() {
-  const { usuario, ehAdmin, escopoVendedores } = useSessao();
+  const { ehAdmin, escopoVendedores } = useSessao();
   const { pedidos: todos, autorizar } = usePedidos();
 
   const [recorte, setRecorte] = useState<Recorte>("corte");
@@ -61,22 +61,19 @@ export default function PaginaAutorizar() {
     setSelecionados(todosSelecionados ? new Set() : new Set(selecionaveis));
   }
 
-  function autorizarIds(ids: string[]) {
+  async function autorizarIds(ids: string[]) {
     if (ids.length === 0) return;
-    const { autorizados, bloqueados } = autorizar(ids, usuario.id);
+    const resultado = await autorizar(ids);
+    if (!resultado) return;
+    const { autorizados, bloqueados } = resultado;
 
     if (autorizados.length > 0) {
-      const codigos = autorizados
-        .slice(0, 3)
-        .map((p) => p.rastreio?.codigo)
-        .filter(Boolean)
-        .join(", ");
       toast.success(
         autorizados.length === 1
           ? "Envio autorizado"
           : `${autorizados.length} envios autorizados`,
         {
-          description: `Código de rastreio simulado: ${codigos}${autorizados.length > 3 ? "…" : ""}. Já aparecem em Rastreio.`,
+          description: "O código de rastreio chega pela integração de logística.",
         },
       );
     }

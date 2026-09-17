@@ -42,20 +42,25 @@ import { ModalConfirmacao } from "@/components/shared/modal-confirmacao";
 import { SeletorPeriodo } from "@/components/shared/seletor-periodo";
 import { SeloStatusPedido, SeloTom } from "@/components/shared/selo-status";
 import { Tabela, type ColunaTabela } from "@/components/shared/tabela";
+import { useParametroUrl } from "@/lib/url";
 import {
   ModalFaturaFornecedor,
   ModalPagamentoFornecedor,
   ModalParametrosFornecedor,
 } from "@/components/financeiro/modais-fornecedor";
 
-type Secao = "custos" | "pagamentos" | "reembolsados" | "conferencia";
+const SECOES = ["custos", "pagamentos", "reembolsados", "conferencia"] as const;
+type Secao = (typeof SECOES)[number];
+const ehSecao = (valor: string | null): valor is Secao => SECOES.includes(valor as Secao);
 
 export default function PaginaFinanceiroFornecedor() {
   const { pedidos } = usePedidos();
   const { kits } = useCadastros();
   const { parametros, pagamentosFornecedor, faturas, excluirPagamentoFornecedor } = useFinanceiro();
 
-  const [secao, setSecao] = useState<Secao>("custos");
+  // A seção fica na URL: a busca global abre direto em Pagamentos ou Conferência.
+  const [secaoUrl, setSecao] = useParametroUrl("secao");
+  const secao: Secao = ehSecao(secaoUrl) ? secaoUrl : "custos";
   const [periodo, setPeriodo] = useState<PeriodoAnalise>(() => periodoDoPreset("mes"));
   const [editandoParametros, setEditandoParametros] = useState(false);
   const [lancandoPagamento, setLancandoPagamento] = useState(false);

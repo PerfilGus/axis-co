@@ -1,6 +1,7 @@
 import type { DataISO, Pedido, StatusRastreio } from "@/lib/types";
 import { ultimaAtualizacaoDe } from "@/lib/types/rastreio";
 import { ORDEM_SECOES_RASTREIO, STATUS_RASTREIO } from "@/lib/status";
+import { normalizar } from "@/lib/busca";
 
 /**
  * Filtro, ordenação e agrupamento da lista de rastreio.
@@ -38,9 +39,6 @@ export interface BuscaRastreio {
   /** Ids que o servidor achou pelo telefone completo (`buscarRastreiosPorTelefone`). */
   idsPorTelefone: ReadonlySet<string>;
 }
-
-const normalizar = (texto: string) =>
-  texto.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
 
 /**
  * Nome, número do pedido (`AX-1001` ou só `1001`), código de rastreio e

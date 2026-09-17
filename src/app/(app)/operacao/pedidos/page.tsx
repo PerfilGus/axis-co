@@ -6,6 +6,7 @@ import type { Pedido, StatusPedido } from "@/lib/types";
 import { formatBRL, formatData } from "@/lib/format";
 import { STATUS_PEDIDO } from "@/lib/status";
 import { useSessao } from "@/lib/providers/sessao";
+import { useParametroUrl } from "@/lib/url";
 import { usePedidos } from "@/lib/providers/pedidos";
 import { useEquipe } from "@/lib/providers/equipe";
 import { useCadastros } from "@/lib/providers/cadastros";
@@ -171,7 +172,7 @@ const montarFiltros = ({ vendedores, kits, criativos, linhas }: Cadastros): Arra
 export default function PaginaPedidos() {
   const { escopoVendedores, podeCriarPedido, ehAdmin } = useSessao();
   const { pedidos: todos } = usePedidos();
-  const [selecionadoId, setSelecionadoId] = useState<string | null>(null);
+  const [selecionadoId, setSelecionadoId] = useParametroUrl("pedido");
   const [filaAberta, setFilaAberta] = useState(false);
 
   const pedidos = useMemo(

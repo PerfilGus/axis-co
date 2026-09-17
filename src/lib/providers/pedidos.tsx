@@ -65,6 +65,8 @@ interface ContextoPedidos {
   apagarRastreio: (ids: ID[]) => Promise<number | null>;
   /** Ids dos rastreios cujo telefone completo contém os dígitos. */
   buscarPorTelefone: (termo: string) => Promise<ID[] | null>;
+  /** Busca global: ids dos pedidos do escopo cujo telefone ou CPF completo contém os dígitos. */
+  buscarPorDocumento: (termo: string) => Promise<ID[] | null>;
   /** Abrir o pedido consome o destaque daquele rastreio. */
   limparDestaque: (pedidoId: ID) => void;
   /** Zera o destaque de todos de uma vez, sem abrir um por um. */
@@ -221,6 +223,11 @@ export function PedidosProvider({ inicial, children }: { inicial: Pedido[]; chil
     [],
   );
 
+  const buscarPorDocumento = useCallback<ContextoPedidos["buscarPorDocumento"]>(
+    (termo) => chamar(acoes.buscarPedidosPorDocumento(termo)),
+    [],
+  );
+
   /** Tira o destaque na hora e grava em segundo plano: é só uma marca de leitura. */
   const tirarDestaque = useCallback((ids: ID[] | null) => {
     setPedidos((atual) =>
@@ -258,6 +265,7 @@ export function PedidosProvider({ inicial, children }: { inicial: Pedido[]; chil
       arquivarRastreio,
       apagarRastreio,
       buscarPorTelefone,
+      buscarPorDocumento,
       limparDestaque,
       redefinirDestaques,
       atualizarRastreios,
@@ -278,6 +286,7 @@ export function PedidosProvider({ inicial, children }: { inicial: Pedido[]; chil
       arquivarRastreio,
       apagarRastreio,
       buscarPorTelefone,
+      buscarPorDocumento,
       limparDestaque,
       redefinirDestaques,
       atualizarRastreios,

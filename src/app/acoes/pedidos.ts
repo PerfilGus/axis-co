@@ -1,11 +1,13 @@
 "use server";
 
-import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql, type AnyColumn } from "drizzle-orm";
 import { z } from "zod";
 import type { Anexo, Pedido } from "@/lib/types";
 import { agoraISO } from "@/lib/iso";
 import * as dominio from "@/lib/dominio/pedidos";
+import { MINIMO_DIGITOS_DOCUMENTO } from "@/lib/busca";
 import {
+  escopoVendedores,
   pedidoNoEscopo,
   podeAnexarNoPedido,
   podeAprovarAjuste,
@@ -520,6 +522,14 @@ export async function apagarRastreios(ids: string[]): Promise<Resultado<Pedido[]
   });
 }
 
+/** Só dígitos, e só a partir do mínimo que a máscara da lista não resolve. */
+function digitosDaBusca(termo: string): string | null {
+  const digitos = z.string().max(40).parse(termo).replace(/\D/g, "");
+  return digitos.length < MINIMO_DIGITOS_DOCUMENTO ? null : digitos;
+}
+
+const soDigitos = (coluna: AnyColumn) => sql`regexp_replace(${coluna}, '[^0-9]', '', 'g')`;
+
 /**
  * Busca da aba Rastreio pelo telefone completo. A lista só conhece o número
  * mascarado, então o servidor compara e devolve apenas ids — nenhum telefone
@@ -529,8 +539,8 @@ export async function buscarRastreiosPorTelefone(termo: string): Promise<Resulta
   return executar(async () => {
     const ctx = await exigirUsuario();
     exigir(podeOperarRastreio(ctx.colaborador));
-    const digitos = z.string().max(40).parse(termo).replace(/\D/g, "");
-    if (digitos.length < 6) return [];
+    const digitos = digitosDaBusca(termo);
+    if (!digitos) return [];
     const linhas = await db
       .select({ id: t.pedidos.id })
       .from(t.pedidos)
@@ -539,10 +549,41 @@ export async function buscarRastreiosPorTelefone(termo: string): Promise<Resulta
         and(
           isNotNull(t.pedidos.rastreio),
           isNull(t.pedidos.rastreioRemovidoEm),
-          sql`regexp_replace(${t.clientes.telefone}, '[^0-9]', '', 'g') like ${"%" + digitos + "%"}`,
+          sql`${soDigitos(t.clientes.telefone)} like ${"%" + digitos + "%"}`,
         ),
       )
       .limit(500);
+    return linhas.map((l) => l.id);
+  });
+}
+
+/**
+ * Busca global por telefone ou CPF completos, dentro do escopo de quem busca.
+ * Como na aba Rastreio, devolve só ids: o dado completo continua saindo apenas
+ * pelo detalhe, com registro.
+ */
+export async function buscarPedidosPorDocumento(termo: string): Promise<Resultado<string[]>> {
+  return executar(async () => {
+    const ctx = await exigirUsuario();
+    const digitos = digitosDaBusca(termo);
+    if (!digitos) return [];
+    const escopo = escopoVendedores(ctx.colaborador);
+    if (escopo && escopo.length === 0) return [];
+    const padrao = "%" + digitos + "%";
+    const linhas = await db
+      .select({ id: t.pedidos.id })
+      .from(t.pedidos)
+      .innerJoin(t.clientes, eq(t.clientes.id, t.pedidos.clienteId))
+      .where(
+        and(
+          escopo ? inArray(t.pedidos.vendedorId, escopo) : undefined,
+          or(
+            sql`${soDigitos(t.clientes.telefone)} like ${padrao}`,
+            sql`${soDigitos(t.clientes.cpf)} like ${padrao}`,
+          ),
+        ),
+      )
+      .limit(200);
     return linhas.map((l) => l.id);
   });
 }

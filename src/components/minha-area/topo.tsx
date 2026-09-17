@@ -5,6 +5,7 @@ import type { PagamentoColaborador } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { formatBRL, formatCompetencia, formatData } from "@/lib/format";
 import { Icone, type NomeIcone } from "@/components/icone";
+import { useBusca } from "@/components/busca/busca-global";
 import {
   Gaveta,
   GavetaCabecalho,
@@ -44,9 +45,13 @@ export function TopoMinhaArea({
   hrefAjustes: string;
   fechamento: PagamentoColaborador | null;
 }) {
+  const { abrir: abrirBusca } = useBusca();
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="inline-flex items-center gap-1 rounded-full bg-surface-2 p-1">
+        <button className={BOTAO_PILULA} aria-label="Buscar" onClick={abrirBusca}>
+          <Icone nome="busca" />
+        </button>
         <Menu>
           <MenuGatilho asChild>
             <button

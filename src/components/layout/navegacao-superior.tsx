@@ -19,6 +19,7 @@ import {
   MenuRotulo,
   MenuSeparador,
 } from "@/components/ui/dropdown-menu";
+import { BotaoBusca } from "@/components/busca/busca-global";
 import { Logo } from "./logo";
 import { BotaoSair } from "./botao-sair";
 import { useEquipe } from "@/lib/providers/equipe";
@@ -82,14 +83,7 @@ export function NavegacaoSuperior() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <Botao
-            variante="secundaria"
-            tamanho="icone"
-            aria-label="Buscar"
-            className="hidden sm:inline-flex"
-          >
-            <Icone nome="busca" />
-          </Botao>
+          <BotaoBusca />
 
           <Botao
             variante="secundaria"

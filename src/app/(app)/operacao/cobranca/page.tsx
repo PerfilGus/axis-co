@@ -19,6 +19,7 @@ import { SeloStatusPedido } from "@/components/shared/selo-status";
 import { Tabela, type ColunaTabela } from "@/components/shared/tabela";
 import { EstadoVazio } from "@/components/shared/estado-vazio";
 import { GavetaPedido } from "@/components/pedido/gaveta-pedido";
+import { useParametroUrl } from "@/lib/url";
 import { ModalPagamento } from "@/components/pedido/modal-pagamento";
 import { toast } from "@/components/ui/toast";
 
@@ -31,7 +32,7 @@ export default function PaginaCobranca() {
   const { bancos } = useCadastros();
 
   const [aba, setAba] = useState<Aba>("aguardando");
-  const [abertoId, setAbertoId] = useState<string | null>(null);
+  const [abertoId, setAbertoId] = useParametroUrl("pedido");
   const [cobrandoId, setCobrandoId] = useState<string | null>(null);
 
   /** A carteira do cobrador: só os vendedores atribuídos a ele pelo Admin. */

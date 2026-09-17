@@ -7,6 +7,7 @@ import { usePedidos } from "@/lib/providers/pedidos";
 import { useCadastros } from "@/lib/providers/cadastros";
 import { useSessao } from "@/lib/providers/sessao";
 import { useTelaLarga } from "@/lib/tela";
+import { useParametroUrl } from "@/lib/url";
 import {
   agruparEmSecoes,
   rastreaveis,
@@ -87,7 +88,8 @@ export default function PaginaRastreio() {
     termo: "",
     ids: new Set(),
   });
-  const [abertoId, setAbertoId] = useState<string | null>(null);
+  const [abertoId, setAbertoId] = useParametroUrl("pedido");
+  const [abaConferida, setAbaConferida] = useState<string | null>(null);
   const [selecionando, setSelecionando] = useState(false);
   const [marcados, setMarcados] = useState<Set<string>>(new Set());
   const [confirmacao, setConfirmacao] = useState<{ operacao: Operacao; ids: string[] } | null>(null);
@@ -136,6 +138,18 @@ export default function PaginaRastreio() {
     ? (todos.find((p) => p.id === abertoId) ?? null)
     : null;
 
+  // Aberto por link (busca global, notificação): mostra a aba onde ele está.
+  if (aberto && abaConferida !== aberto.id) {
+    setAbaConferida(aberto.id);
+    const abaDoItem: AbaRastreio = aberto.rastreio.arquivado ? "arquivados" : "transito";
+    if (abaDoItem !== aba) setAba(abaDoItem);
+  }
+
+  // Abrir consome o destaque, venha o pedido de um toque ou de um link.
+  useEffect(() => {
+    if (aberto?.rastreio.destacado) limparDestaque(aberto.id);
+  }, [aberto, limparDestaque]);
+
   /* ---------------- ações ---------------- */
 
   function alternarMarca(id: string, marcar?: boolean) {
@@ -163,7 +177,6 @@ export default function PaginaRastreio() {
       return;
     }
     setAbertoId(id);
-    limparDestaque(id);
   }
 
   const executarAtualizacao = useCallback(

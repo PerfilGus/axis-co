@@ -4,8 +4,9 @@ import Link from "next/link";
 import type { PagamentoColaborador } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { formatBRL, formatCompetencia, formatData } from "@/lib/format";
-import { Icone, type NomeIcone } from "@/components/icone";
+import { Icone } from "@/components/icone";
 import { useBusca } from "@/components/busca/busca-global";
+import { BotaoNotificacoes } from "@/components/notificacoes/central";
 import {
   Gaveta,
   GavetaCabecalho,
@@ -14,34 +15,18 @@ import {
   GavetaGatilho,
   GavetaRodape,
 } from "@/components/ui/drawer";
-import {
-  Menu,
-  MenuConteudo,
-  MenuGatilho,
-  MenuItem,
-  MenuRotulo,
-} from "@/components/ui/dropdown-menu";
-
-export interface Aviso {
-  chave: string;
-  icone: NomeIcone;
-  texto: string;
-  href?: string;
-}
 
 const BOTAO_PILULA =
   "flex size-10 items-center justify-center rounded-full text-fg transition-colors hover:bg-surface-3";
 
 /**
- * Topo da Minha área: pílula de ações à esquerda (avisos e ajustes) e, à
+ * Topo da Minha área: pílula de ações à esquerda (busca, notificações e ajustes) e, à
  * direita, a comissão prevista do mês, que abre o detalhamento.
  */
 export function TopoMinhaArea({
-  avisos,
   hrefAjustes,
   fechamento,
 }: {
-  avisos: Aviso[];
   hrefAjustes: string;
   fechamento: PagamentoColaborador | null;
 }) {
@@ -52,47 +37,7 @@ export function TopoMinhaArea({
         <button className={BOTAO_PILULA} aria-label="Buscar" onClick={abrirBusca}>
           <Icone nome="busca" />
         </button>
-        <Menu>
-          <MenuGatilho asChild>
-            <button
-              className={cn(BOTAO_PILULA, "relative")}
-              aria-label={`Avisos${avisos.length ? `, ${avisos.length} ${avisos.length === 1 ? "novo" : "novos"}` : ""}`}
-            >
-              <Icone nome="notificacoes" />
-              {avisos.length > 0 && (
-                <span
-                  className="absolute top-2 right-2 size-2 rounded-full ring-2 ring-surface-2"
-                  style={{ backgroundColor: "var(--accent)" }}
-                  aria-hidden
-                />
-              )}
-            </button>
-          </MenuGatilho>
-          <MenuConteudo align="start" className="w-72">
-            <MenuRotulo>Avisos</MenuRotulo>
-            {avisos.length === 0 ? (
-              <p className="px-3 pb-3 text-[13px] text-muted-fg">
-                Nada pedindo sua atenção agora.
-              </p>
-            ) : (
-              avisos.map((aviso) =>
-                aviso.href ? (
-                  <MenuItem key={aviso.chave} asChild>
-                    <Link href={aviso.href} className="items-start rounded-[var(--radius-input)]">
-                      <Icone nome={aviso.icone} size={15} className="mt-0.5" />
-                      <span className="whitespace-normal">{aviso.texto}</span>
-                    </Link>
-                  </MenuItem>
-                ) : (
-                  <MenuItem key={aviso.chave} className="items-start rounded-[var(--radius-input)]">
-                    <Icone nome={aviso.icone} size={15} className="mt-0.5" />
-                    <span className="whitespace-normal">{aviso.texto}</span>
-                  </MenuItem>
-                ),
-              )
-            )}
-          </MenuConteudo>
-        </Menu>
+        <BotaoNotificacoes estilo="pilula" />
         <span className="h-5 w-px bg-border" aria-hidden />
         <Link href={hrefAjustes} className={BOTAO_PILULA} aria-label="Configurações" title="Configurações">
           <Icone nome="configuracoes" />

@@ -1,8 +1,10 @@
 import Link from "next/link";
-import type { BonusNivel, Colaborador, Nivel } from "@/lib/types";
+import type { BonusNivel, Colaborador, Nivel, RecompensaLiberada } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { formatBRL, formatNumero } from "@/lib/format";
-import type { EtapaConquista } from "@/lib/minha-area";
+import { rotuloDaJanela } from "@/lib/periodos";
+import { formatarMetrica } from "@/lib/metricas";
+import type { ConquistaNaJanela } from "@/lib/recompensas";
 import type { PosicaoRanking } from "@/lib/ranking";
 import { Icone, ICONES, type NomeIcone } from "@/components/icone";
 import { Card } from "@/components/ui/card";
@@ -108,7 +110,7 @@ export function CardConquistas({
   etapas,
   sequencia,
 }: {
-  etapas: EtapaConquista[];
+  etapas: ConquistaNaJanela[];
   sequencia: number;
 }) {
   const feitas = etapas.filter((e) => e.feita).length;
@@ -137,11 +139,12 @@ export function CardConquistas({
           <ol className="scrollbar-none -mx-5 flex overflow-x-auto px-5 pb-1">
             {etapas.map((etapa, i) => {
               const ultima = i === etapas.length - 1;
+              const criterio = `${formatarMetrica(etapa.conquista.metrica, etapa.atual)} de ${formatarMetrica(etapa.conquista.metrica, etapa.conquista.valor)}`;
               return (
                 <li
                   key={etapa.conquista.id}
                   className="flex min-w-18 flex-1 items-start last:flex-none"
-                  aria-label={`${etapa.conquista.nome}: ${etapa.feita ? "feita" : "a fazer"}, ${etapa.conquista.pontos} pontos. ${etapa.conquista.criterio}`}
+                  aria-label={`${etapa.conquista.nome}: ${etapa.feita ? "feita" : "a fazer"}, ${etapa.conquista.pontos} pontos. ${criterio}`}
                 >
                   <div className="flex w-18 shrink-0 flex-col items-center gap-1.5 text-center">
                     <span
@@ -151,7 +154,7 @@ export function CardConquistas({
                           ? "bg-[var(--accent)] text-[var(--accent-fg)]"
                           : "border border-dashed border-border-strong text-muted-fg",
                       )}
-                      title={etapa.conquista.criterio}
+                      title={criterio}
                     >
                       {etapa.feita ? (
                         <Icone nome="check" size={16} weight="bold" />
@@ -169,7 +172,6 @@ export function CardConquistas({
                     </span>
                     <span className="tabular text-[10px] text-muted-fg">
                       +{formatNumero(etapa.conquista.pontos)} pts
-                      {etapa.janela ? ` · ${etapa.janela}` : ""}
                     </span>
                   </div>
                   {!ultima && (
@@ -197,9 +199,41 @@ export function CardConquistas({
                 <span className="tabular font-medium text-fg">+{formatNumero(emAberto)} pts</span>
               </>
             )}
-            .
+            . Elas são conferidas quando a janela fecha.
           </p>
         </>
+      )}
+    </Card>
+  );
+}
+
+/** Bônus de recompensa do mês, com as janelas que renderam. */
+export function CardRecompensas({ liberadas }: { liberadas: RecompensaLiberada[] }) {
+  const total = liberadas.reduce((s, l) => s + l.valor, 0);
+  return (
+    <Card className="flex flex-col gap-4 p-5">
+      <TituloCard icone="dinheiro">Bônus do mês</TituloCard>
+      <div className="flex flex-col">
+        <span className="tabular text-[28px] leading-none font-medium tracking-tight">
+          {formatBRL(total)}
+        </span>
+        <span className="mt-1 text-[11px] text-muted-fg">
+          {total > 0 ? "entra no fechamento do mês" : "nada liberado ainda neste mês"}
+        </span>
+      </div>
+      {liberadas.length > 0 && (
+        <ul className="flex flex-col">
+          {liberadas.map((l) => (
+            <li
+              key={l.id}
+              className="flex items-center justify-between gap-3 border-t border-border py-2 text-[13px] first:border-t-0"
+            >
+              <span className="min-w-0 flex-1 truncate">{l.nome}</span>
+              <span className="text-xs text-muted-fg">{rotuloDaJanela(l.janela)}</span>
+              <span className="tabular font-medium">{formatBRL(l.valor)}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </Card>
   );
@@ -273,6 +307,13 @@ export function CardNivel({
           style={{ width: `${progresso * 100}%` }}
         />
       </div>
+
+      {atual.beneficio && (
+        <div className="flex items-center justify-between gap-3 rounded-[var(--radius-input)] bg-surface-2 px-4 py-3">
+          <span className="text-[13px] text-muted-fg">Benefício do nível</span>
+          <span className="text-right text-sm font-medium">{atual.beneficio}</span>
+        </div>
+      )}
 
       {proximo ? (
         <div className="flex items-center justify-between gap-3 rounded-[var(--radius-input)] bg-surface-2 px-4 py-3">

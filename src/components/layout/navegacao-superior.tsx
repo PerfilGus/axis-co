@@ -4,12 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { GRUPOS_POR_PERFIL, grupoDaRota, GRUPO_CONFIG, CONFIG_POR_PERFIL, HREF_PERFIL } from "@/lib/nav";
-import { totalNotificacoes } from "@/lib/contadores";
-import { usePedidos } from "@/lib/providers/pedidos";
 import { useSessao } from "@/lib/providers/sessao";
 import { useAparencia } from "@/lib/providers/aparencia";
 import { Icone } from "@/components/icone";
-import { Botao } from "@/components/ui/button";
 import { AvatarAnel } from "@/components/shared/avatar-anel";
 import {
   Menu,
@@ -20,6 +17,7 @@ import {
   MenuSeparador,
 } from "@/components/ui/dropdown-menu";
 import { BotaoBusca } from "@/components/busca/busca-global";
+import { BotaoNotificacoes } from "@/components/notificacoes/central";
 import { Logo } from "./logo";
 import { BotaoSair } from "./botao-sair";
 import { useEquipe } from "@/lib/providers/equipe";
@@ -32,14 +30,12 @@ import { progressoNivel as medirNivel } from "@/lib/dominio/equipe";
  */
 export function NavegacaoSuperior() {
   const pathname = usePathname();
-  const { perfil, usuario, ehAdmin, escopoVendedores } = useSessao();
+  const { perfil, usuario, ehAdmin } = useSessao();
   const { tema, alternarTema } = useAparencia();
-  const { pedidos } = usePedidos();
 
   const grupos = GRUPOS_POR_PERFIL[perfil];
   const grupoAtivo = grupoDaRota(perfil, pathname);
   const naConfig = pathname.startsWith("/configuracoes");
-  const notificacoes = totalNotificacoes(pedidos, escopoVendedores, ehAdmin);
 
   const { niveis } = useEquipe();
   const { atual: nivel, progresso: progressoNivel } = medirNivel(niveis, usuario);
@@ -85,21 +81,7 @@ export function NavegacaoSuperior() {
         <div className="ml-auto flex items-center gap-2">
           <BotaoBusca />
 
-          <Botao
-            variante="secundaria"
-            tamanho="icone"
-            aria-label={`Notificações${notificacoes ? `, ${notificacoes} pendentes` : ""}`}
-            className="relative"
-          >
-            <Icone nome="notificacoes" />
-            {notificacoes > 0 && (
-              <span
-                className="absolute top-2 right-2 size-2 rounded-full ring-2 ring-surface-2"
-                style={{ backgroundColor: "var(--accent)" }}
-                aria-hidden
-              />
-            )}
-          </Botao>
+          <BotaoNotificacoes />
 
           <Link
             href={CONFIG_POR_PERFIL[perfil][0].href}

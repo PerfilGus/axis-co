@@ -4,6 +4,8 @@ import { NavegacaoInferior } from "@/components/layout/navegacao-inferior";
 import { Guarda } from "@/components/layout/guarda";
 import { ProvedoresDados } from "@/components/layout/provedores-dados";
 import { ProvedorBusca } from "@/components/busca/busca-global";
+import { ProvedorCentral } from "@/components/notificacoes/central";
+import { RegistrarServiceWorker } from "@/components/notificacoes/ativar-push";
 import { RenovarSessao } from "@/components/layout/renovar-sessao";
 import { carregarDadosIniciais } from "@/lib/servidor/dados";
 import { contextoDaSessao } from "@/lib/servidor/sessao";
@@ -23,15 +25,18 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
   return (
     <ProvedoresDados dados={dados}>
       <ProvedorBusca>
-        <div className="flex min-h-dvh flex-col bg-bg">
-          <NavegacaoSuperior />
-          <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 pt-6 pb-28 md:pb-12 lg:px-6">
-            <Guarda>{children}</Guarda>
-          </main>
-          <NavegacaoInferior />
-        </div>
+        <ProvedorCentral>
+          <div className="flex min-h-dvh flex-col bg-bg">
+            <NavegacaoSuperior />
+            <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 pt-6 pb-28 md:pb-12 lg:px-6">
+              <Guarda>{children}</Guarda>
+            </main>
+            <NavegacaoInferior />
+          </div>
+        </ProvedorCentral>
       </ProvedorBusca>
       <RenovarSessao />
+      <RegistrarServiceWorker />
     </ProvedoresDados>
   );
 }

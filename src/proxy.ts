@@ -15,10 +15,13 @@ import { auth } from "@/lib/servidor/auth";
  * sessão e permissão de novo no servidor.
  */
 
-/** `/api/cron` não tem sessão: a própria rota confere o `CRON_SECRET`. */
-const PUBLICAS = ["/entrar", "/privacidade", "/api/auth", "/api/cron"];
+/**
+ * `/api/cron` não tem sessão: a própria rota confere o `CRON_SECRET`. `/sw.js`
+ * precisa carregar mesmo com a sessão vencida, para o aparelho seguir recebendo push.
+ */
+const PUBLICAS = ["/entrar", "/privacidade", "/api/auth", "/api/cron", "/sw.js"];
 /** Exigem sessão, mas valem para qualquer perfil. */
-const LIVRES_COM_SESSAO = ["/", "/primeiro-acesso", "/api/anexos"];
+const LIVRES_COM_SESSAO = ["/", "/primeiro-acesso", "/api/anexos", "/api/notificacoes"];
 
 function politicaDeConteudo(nonce: string): string {
   const dev = process.env.NODE_ENV === "development";
@@ -35,6 +38,8 @@ function politicaDeConteudo(nonce: string): string {
     `connect-src 'self'${dev ? " ws:" : ""}${preview ? " https://vercel.live wss://ws-us3.pusher.com" : ""}`,
     `frame-src 'self'${vercelLive}`,
     "media-src 'self' blob:",
+    // Service worker das notificações: sem isto, o `strict-dynamic` o bloquearia.
+    "worker-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

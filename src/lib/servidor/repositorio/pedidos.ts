@@ -4,6 +4,7 @@ import type { Anexo, EventoPedido, ID, Pedido, TipoEventoPedido } from "@/lib/ty
 import { db, type Transacao } from "../db";
 import { ajustes, anexos, atividades, clientes, pedidos } from "../schema";
 import { registrarAtividades, type NovaAtividade } from "../atividades";
+import { sincronizarPontosDoPedido } from "../pontos";
 import { agoraISO } from "@/lib/iso";
 import { finalizadoEmApos } from "@/lib/retencao";
 
@@ -167,6 +168,9 @@ function diferencas(antes: Pedido | null, depois: Pedido) {
  * Grava o pedido e o que mudou nele: cliente, ajustes e os eventos novos da
  * linha do tempo, que viram atividades. Anexos são gravados por quem sobe o
  * arquivo (`anexos.ts`). `finalizadoEm` sai do status, nunca de quem chama.
+ *
+ * É também o único lugar que lança pontos de pedido: sai daqui com o extrato
+ * já batendo com o status gravado (`servidor/pontos.ts`).
  */
 export async function gravarPedido(
   tx: Transacao,
@@ -236,6 +240,14 @@ export async function gravarPedido(
     },
   }));
   await registrarAtividades(lista, tx);
+
+  const autorId = novos[novos.length - 1]?.autorId ?? null;
+  await sincronizarPontosDoPedido(
+    tx,
+    depois.id,
+    { ...(depois as Pedido), codigo: codigoDoPedido(gravado.numero) },
+    { usuarioId: autorId, papel },
+  );
 
   return gravado.numero;
 }

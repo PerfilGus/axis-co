@@ -8,10 +8,11 @@ import { CadastrosProvider } from "@/lib/providers/cadastros";
 import { PedidosProvider } from "@/lib/providers/pedidos";
 import { FinanceiroProvider } from "@/lib/providers/financeiro";
 import { MarketingProvider } from "@/lib/providers/marketing";
+import { NotificacoesProvider } from "@/lib/providers/notificacoes";
 
 /**
  * Monta os providers com o que o servidor carregou para a sessão.
- * Ordem: Equipe > Sessão > Cadastros > Pedidos > Financeiro > Marketing.
+ * Ordem: Equipe > Sessão > Cadastros > Pedidos > Financeiro > Marketing > Notificações.
  */
 export function ProvedoresDados({ dados, children }: { dados: DadosIniciais; children: ReactNode }) {
   return (
@@ -20,7 +21,9 @@ export function ProvedoresDados({ dados, children }: { dados: DadosIniciais; chi
         <CadastrosProvider inicial={dados.cadastros}>
           <PedidosProvider inicial={dados.pedidos}>
             <FinanceiroProvider inicial={dados.financeiro}>
-              <MarketingProvider inicial={dados.marketing}>{children}</MarketingProvider>
+              <MarketingProvider inicial={dados.marketing}>
+                <NotificacoesProvider inicial={dados.notificacoes}>{children}</NotificacoesProvider>
+              </MarketingProvider>
             </FinanceiroProvider>
           </PedidosProvider>
         </CadastrosProvider>

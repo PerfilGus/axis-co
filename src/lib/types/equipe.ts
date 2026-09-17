@@ -49,18 +49,8 @@ export interface Colaborador {
   frustradoBps: number | null;
 }
 
-/**
- * Regra de contagem fixa por setor, não configurável:
- * - vendas: pedidos agendados por ele, menos os cancelados.
- * - financeiro: pedidos pagos dos vendedores atribuídos a ele.
- */
-export type BaseContagemMeta = "agendados_menos_cancelados" | "pagos_atribuidos";
-
-export const BASE_CONTAGEM_POR_SETOR: Record<Setor, BaseContagemMeta | null> = {
-  vendas: "agendados_menos_cancelados",
-  financeiro: "pagos_atribuidos",
-  administracao: null,
-};
+/** Setores que pontuam, batem metas e recebem recompensas. */
+export type SetorPontuavel = Exclude<Setor, "administracao">;
 
 export type PeriodoMeta = "diaria" | "semanal" | "mensal";
 
@@ -70,32 +60,41 @@ export const ROTULO_PERIODO_META: Record<PeriodoMeta, string> = {
   mensal: "Mensal",
 };
 
-/** O que a meta mede. Faturamento trafega em centavos, como todo dinheiro. */
-export type TipoMeta = "pedidos" | "faturamento";
+/**
+ * O que metas, conquistas e recompensas medem. O cálculo de cada uma mora em
+ * `lib/metricas.ts`; o catálogo com rótulo, unidade e setores também.
+ */
+export type Metrica =
+  | "agendados"
+  | "faturamento_agendado"
+  | "enviados"
+  | "pagos"
+  | "valor_recebido"
+  | "taxa_frustracao"
+  | "taxa_recebimento"
+  | "pontos"
+  | "dias_trabalhados"
+  | "metas_batidas";
 
-/** Bater a faixa aumenta a comissão ou paga um valor fechado. */
-export type TipoRecompensa = "percentual" | "bonus";
-
-export interface FaixaMeta {
-  id: ID;
-  /** Quantidade de pedidos, ou centavos quando a meta é de faturamento. */
-  alvo: number;
-  recompensa: TipoRecompensa;
-  /** Base points quando `percentual`; centavos quando `bonus`. */
-  valor: number;
-}
+/** `maior_igual`: bate quando chega ao valor. `menor_igual`: quando fica abaixo. */
+export type Operador = "maior_igual" | "menor_igual";
 
 /**
- * Meta de um colaborador. As faixas são degraus: vale a mais alta alcançada,
- * nunca a soma delas.
+ * Meta: uma métrica, um alvo e uma janela. Vale para um setor inteiro ou para
+ * uma pessoa, dentro da vigência (dias `aaaa-mm-dd`, inclusive).
  */
 export interface Meta {
   id: ID;
-  colaboradorId: ID;
   nome: string;
-  tipo: TipoMeta;
+  metrica: Metrica;
+  /** Na unidade da métrica: quantidade, centavos ou base points. */
+  alvo: number;
   periodo: PeriodoMeta;
-  faixas: FaixaMeta[];
+  /** Um dos dois: o setor inteiro ou uma pessoa. */
+  setor: SetorPontuavel | null;
+  colaboradorId: ID | null;
+  vigenteDesde: string;
+  vigenteAte: string | null;
   ativa: boolean;
 }
 
@@ -104,41 +103,148 @@ export interface Nivel {
   nome: string;
   ordem: number;
   pontosNecessarios: number;
-  /** Pago uma vez, quando o colaborador chega ao nível. */
+  /** Pago uma vez, na primeira vez que o colaborador chega ao nível. */
   bonus: Centavos;
-  /** Ilustração do card de premiação. */
+  /** Ícone do registro `components/icone.tsx`. */
   icone: string;
+  /** Chave da paleta (`roxo-vibrante`). Nulo usa o destaque. */
+  cor: string | null;
+  /** O que o nível dá além do bônus, em texto: "Folga no aniversário". */
+  beneficio: string;
 }
 
 /**
- * De onde vêm os pontos. O gatilho é o contrato com o backend; enquanto não
- * existe, `criterio` é o texto mostrado na tela.
+ * Conquista: métrica + condição numa janela. Avaliada quando a janela fecha;
+ * a repetível pontua uma vez por janela, a única uma vez na vida.
  */
-export type GatilhoConquista =
-  | "meta_diaria"
-  | "meta_semanal"
-  | "meta_mensal"
-  | "domingo_feriado"
-  | "dias_trabalhados"
-  | "marco";
-
 export interface Conquista {
   id: ID;
   nome: string;
   descricao: string;
   icone: string;
+  metrica: Metrica;
+  operador: Operador;
+  valor: number;
+  periodo: PeriodoMeta;
+  /** Nulo vale para vendas e financeiro. */
+  setor: SetorPontuavel | null;
   pontos: number;
-  gatilho: GatilhoConquista;
-  /** Pontua toda vez que acontece, e não só na primeira. */
   repetivel: boolean;
-  criterio: string;
   ativa: boolean;
 }
 
 export interface ConquistaDesbloqueada {
   conquistaId: ID;
   colaboradorId: ID;
+  /** A janela que rendeu: `2026-09-17`, `2026-W38`, `2026-09` ou `manual-…`. */
+  janela: string;
+  pontos: number;
   desbloqueadaEm: DataISO;
+}
+
+/* ================================================================
+   Pontos
+   ================================================================ */
+
+/** Como os pontos por pedido são somados ao valor fixo. */
+export type AdicionalPontos = "nenhum" | "faixa_valor" | "kit";
+
+export interface FaixaValorPontos {
+  /** A partir deste valor do pedido (centavos, sem frete). */
+  minimo: Centavos;
+  pontos: number;
+}
+
+/**
+ * Regra de pontuação de um setor. Cada gravação é uma versão com data de
+ * vigência; um evento usa a versão vigente no dia em que aconteceu. Antes da
+ * primeira vigência, nada pontua.
+ */
+export interface RegraPontuacao {
+  id: ID;
+  setor: SetorPontuavel;
+  vigenteDesde: string;
+  pontosFixos: number;
+  adicional: AdicionalPontos;
+  faixasValor: FaixaValorPontos[];
+  pontosPorKit: Array<{ kitId: ID; pontos: number }>;
+  /** Parte dos pontos perdida no pedido frustrado, em base points (5000 = 50%). */
+  penalidadeBps: number;
+  /**
+   * Abaixo do mínimo do nível, cai só quem ficar com este progresso ou menos
+   * na faixa do nível anterior (8000 = 80%).
+   */
+  quedaNivelBps: number;
+  criadoPor: ID | null;
+  criadoEm: DataISO;
+}
+
+/** De onde veio o lançamento do extrato. */
+export type EventoPontos =
+  | "agendamento"
+  | "cancelamento"
+  | "cancelamento_revertido"
+  | "frustracao"
+  | "frustracao_revertida"
+  | "pagamento"
+  | "pagamento_revertido"
+  | "exclusao"
+  | "conquista";
+
+/**
+ * Uma linha do extrato. Só é inserida, nunca editada: correção de status vira
+ * um lançamento de sinal contrário na data da correção.
+ */
+export interface LancamentoPontos {
+  id: ID;
+  colaboradorId: ID;
+  setor: SetorPontuavel;
+  pedidoId: ID | null;
+  /** Congelado: o extrato continua legível se o pedido for excluído. */
+  pedidoCodigo: string | null;
+  evento: EventoPontos;
+  pontos: number;
+  descricao: string;
+  regraId: ID | null;
+  ocorridoEm: DataISO;
+}
+
+/* ================================================================
+   Recompensas
+   ================================================================ */
+
+export type CondicaoRecompensa =
+  | { tipo: "meta"; metaId: ID }
+  | { tipo: "metrica"; metrica: Metrica; operador: Operador; valor: number };
+
+/** Bônus em dinheiro liberado quando a condição é cumprida na janela. */
+export interface Recompensa {
+  id: ID;
+  nome: string;
+  valor: Centavos;
+  condicao: CondicaoRecompensa;
+  /** Na condição de meta, acompanha o período da meta. */
+  periodo: PeriodoMeta;
+  setor: SetorPontuavel | null;
+  colaboradorId: ID | null;
+  vigenteDesde: string;
+  vigenteAte: string | null;
+  ativa: boolean;
+}
+
+/** Recompensa ganha numa janela. Entra no fechamento do mês em que a janela termina. */
+export interface RecompensaLiberada {
+  id: ID;
+  recompensaId: ID;
+  colaboradorId: ID;
+  janela: string;
+  /** Último dia da janela (`aaaa-mm-dd`): decide a competência do fechamento. */
+  janelaFim: string;
+  nome: string;
+  valor: Centavos;
+  liberadaEm: DataISO;
+  status: "liberado" | "pago";
+  pagoEm: DataISO | null;
 }
 
 /**
@@ -186,4 +292,6 @@ export interface PagamentoColaborador {
   detalhamento: LinhaDetalhe[];
   /** Bônus de nível quitados junto com este fechamento. */
   bonusNivelIds: ID[];
+  /** Recompensas quitadas junto com este fechamento. */
+  recompensaIds: ID[];
 }

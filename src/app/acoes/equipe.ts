@@ -1,20 +1,39 @@
 "use server";
 
 import { headers } from "next/headers";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { z } from "zod";
-import type { BonusNivel, Colaborador, Conquista, Meta, Nivel } from "@/lib/types";
-import { agoraISO } from "@/lib/iso";
+import type {
+  BonusNivel,
+  Colaborador,
+  Conquista,
+  LancamentoPontos,
+  Meta,
+  Metrica,
+  Nivel,
+  Recompensa,
+  RegraPontuacao,
+} from "@/lib/types";
+import { agoraISO, iso } from "@/lib/iso";
 import { problemaDaSenha } from "@/lib/senha";
+import { hoje, intervaloDeDias } from "@/lib/periodos";
+import { CATALOGO_METRICAS, DEFINICAO_METRICA } from "@/lib/metricas";
 import { calcularFechamento } from "@/lib/comissoes";
-import { promover, reordenarNiveis } from "@/lib/dominio/equipe";
+import { reordenarNiveis } from "@/lib/dominio/equipe";
 import { podeConfigurar, podeGerirEquipe } from "@/lib/permissoes";
 import { auth } from "@/lib/servidor/auth";
-import { db, type Transacao } from "@/lib/servidor/db";
+import { db } from "@/lib/servidor/db";
 import * as t from "@/lib/servidor/schema";
 import { carregarEquipe, type DadosEquipe } from "@/lib/servidor/dados";
 import { carregarPedidos } from "@/lib/servidor/repositorio/pedidos";
 import { registrarAtividades } from "@/lib/servidor/atividades";
+import {
+  atualizarSaldoENivel,
+  avaliarJanelasFechadas,
+  lancarPontos,
+  quitarRecompensas,
+  type ResultadoAvaliacao,
+} from "@/lib/servidor/pontos";
 import {
   ErroDeAcao,
   executar,
@@ -23,7 +42,10 @@ import {
   type ContextoSessao,
   type Resultado,
 } from "@/lib/servidor/sessao";
-import { bps, centavos, competencia, schemaId } from "./validacao";
+import { bps, centavos, competencia, dia, schemaId, textoLivre } from "./validacao";
+
+/** As métricas do catálogo, para o Zod recusar qualquer outra. */
+const METRICAS = CATALOGO_METRICAS.map((m) => m.chave) as [Metrica, ...Metrica[]];
 
 /**
  * Equipe: colaboradores e o acesso deles, metas, níveis, conquistas, bônus e
@@ -43,41 +65,6 @@ function autor(ctx: ContextoSessao) {
 
 async function comEquipe<T>(ctx: ContextoSessao, extra: T): Promise<{ equipe: DadosEquipe; extra: T }> {
   return { equipe: await carregarEquipe(ctx.colaborador), extra };
-}
-
-/** Grava a promoção de nível e os bônus liberados dentro da transação. */
-async function aplicarPromocao(
-  tx: Transacao,
-  ctx: ContextoSessao,
-  colaboradores: Colaborador[],
-  niveis: Nivel[],
-): Promise<BonusNivel[]> {
-  const bonus = await tx.select().from(t.bonusNivel);
-  const resultado = promover(colaboradores, niveis, bonus, {
-    agora: agoraISO(),
-    novoId: () => crypto.randomUUID(),
-  });
-  for (const c of resultado.colaboradores) {
-    const antes = colaboradores.find((x) => x.id === c.id);
-    if (antes && antes.nivelId !== c.nivelId) {
-      await tx.update(t.colaboradores).set({ nivelId: c.nivelId }).where(eq(t.colaboradores.id, c.id));
-    }
-  }
-  if (resultado.liberados.length > 0) {
-    await tx.insert(t.bonusNivel).values(resultado.liberados);
-    await registrarAtividades(
-      resultado.liberados.map((b) => ({
-        ...autor(ctx),
-        acao: "bonus_liberado",
-        entidade: "colaborador",
-        entidadeId: b.colaboradorId,
-        titulo: "Bônus de nível liberado",
-        depois: { nivelId: b.nivelId, valor: b.valor },
-      })),
-      tx,
-    );
-  }
-  return resultado.liberados;
 }
 
 /* ================================================================
@@ -292,29 +279,149 @@ export async function redefinirDoisFatores(colaboradorId: string): Promise<Resul
 }
 
 /* ================================================================
-   Metas, níveis e conquistas
+   Pontuação, metas, níveis, conquistas e recompensas
    ================================================================ */
 
-const schemaMeta = z.object({
-  id: schemaId.optional(),
-  colaboradorId: schemaId,
-  nome: z.string().trim().min(1, "Dê um nome à meta.").max(120),
-  tipo: z.enum(["pedidos", "faturamento"]),
-  periodo: z.enum(["diaria", "semanal", "mensal"]),
-  faixas: z
-    .array(
-      z.object({
-        id: schemaId,
-        alvo: z.number().int().positive(),
-        recompensa: z.enum(["percentual", "bonus"]),
-        valor: z.number().int().min(0),
-      }),
-    )
-    .min(1, "Cadastre pelo menos uma faixa."),
-  ativa: z.boolean(),
+/** A regra só passa a valer de hoje em diante: o passado não é recalculado. */
+const vigenciaFutura = dia.refine((d) => d >= hoje(), "A vigência começa hoje ou depois.");
+
+const schemaRegra = z.object({
+  setor: z.enum(["vendas", "financeiro"]),
+  vigenteDesde: vigenciaFutura,
+  pontosFixos: z.number().int().min(0).max(100_000),
+  adicional: z.enum(["nenhum", "faixa_valor", "kit"]),
+  faixasValor: z
+    .array(z.object({ minimo: centavos, pontos: z.number().int().min(0).max(100_000) }))
+    .max(10),
+  pontosPorKit: z
+    .array(z.object({ kitId: schemaId, pontos: z.number().int().min(0).max(100_000) }))
+    .max(50),
+  penalidadeBps: bps.max(10_000),
+  quedaNivelBps: bps.max(10_000),
 });
 
-export async function salvarMeta(entrada: z.input<typeof schemaMeta>): Promise<Resultado<{ equipe: DadosEquipe; extra: Meta }>> {
+/**
+ * Grava uma versão da regra de pontuação. Salvar duas vezes com a mesma
+ * vigência troca aquela versão; as anteriores ficam, porque os lançamentos
+ * já feitos apontam para elas.
+ */
+export async function salvarRegraPontuacao(
+  entrada: z.input<typeof schemaRegra>,
+): Promise<Resultado<{ equipe: DadosEquipe; extra: RegraPontuacao }>> {
+  return executar(async () => {
+    const ctx = await exigirUsuario();
+    exigir(podeConfigurar(ctx.colaborador), "Só o Admin configura a pontuação.");
+    const dados = schemaRegra.parse(entrada);
+
+    const regra = await db.transaction(async (tx) => {
+      const [antes] = await tx
+        .select()
+        .from(t.regrasPontuacao)
+        .where(
+          and(
+            eq(t.regrasPontuacao.setor, dados.setor),
+            eq(t.regrasPontuacao.vigenteDesde, dados.vigenteDesde),
+          ),
+        )
+        .limit(1);
+      const linha: RegraPontuacao = {
+        ...dados,
+        id: antes?.id ?? crypto.randomUUID(),
+        criadoPor: ctx.colaborador.id,
+        criadoEm: agoraISO(),
+      };
+      await tx
+        .insert(t.regrasPontuacao)
+        .values(linha)
+        .onConflictDoUpdate({ target: t.regrasPontuacao.id, set: linha });
+      await registrarAtividades(
+        [
+          {
+            ...autor(ctx),
+            acao: antes ? "edicao" : "criacao",
+            entidade: "regra_pontuacao",
+            entidadeId: linha.id,
+            titulo: `Pontuação de ${linha.setor === "vendas" ? "vendas" : "financeiro"} a partir de ${linha.vigenteDesde}`,
+            antes: antes ?? null,
+            depois: linha,
+          },
+        ],
+        tx,
+      );
+      // A tolerância de queda pode ter mudado: reavalia a trilha de todo mundo.
+      const pontuaveis = await tx.select({ id: t.colaboradores.id }).from(t.colaboradores);
+      await atualizarSaldoENivel(tx, pontuaveis.map((c) => c.id), autor(ctx));
+      return linha;
+    });
+    return comEquipe(ctx, regra);
+  });
+}
+
+/** Apaga uma versão ainda não vigente. O que já valeu fica no histórico. */
+export async function excluirRegraPontuacao(
+  id: string,
+): Promise<Resultado<{ equipe: DadosEquipe; extra: null }>> {
+  return executar(async () => {
+    const ctx = await exigirUsuario();
+    exigir(podeConfigurar(ctx.colaborador));
+    const [antes] = await db
+      .select()
+      .from(t.regrasPontuacao)
+      .where(eq(t.regrasPontuacao.id, schemaId.parse(id)))
+      .limit(1);
+    if (!antes) throw new ErroDeAcao("Regra não encontrada.");
+    if (antes.vigenteDesde <= hoje()) throw new ErroDeAcao("Essa regra já está valendo e não pode ser apagada.");
+    await db.transaction(async (tx) => {
+      await tx.delete(t.regrasPontuacao).where(eq(t.regrasPontuacao.id, antes.id));
+      await registrarAtividades(
+        [
+          {
+            ...autor(ctx),
+            acao: "exclusao",
+            entidade: "regra_pontuacao",
+            entidadeId: antes.id,
+            titulo: `Pontuação agendada para ${antes.vigenteDesde} cancelada`,
+            antes,
+          },
+        ],
+        tx,
+      );
+    });
+    return comEquipe(ctx, null);
+  });
+}
+
+/* ---------------- metas ---------------- */
+
+const schemaMeta = z
+  .object({
+    id: schemaId.optional(),
+    nome: z.string().trim().min(1, "Dê um nome à meta.").max(120),
+    metrica: z.enum(METRICAS),
+    alvo: z.number().int().min(0).max(1_000_000_000),
+    periodo: z.enum(["diaria", "semanal", "mensal"]),
+    setor: z.enum(["vendas", "financeiro"]).nullable(),
+    colaboradorId: schemaId.nullable(),
+    vigenteDesde: dia,
+    vigenteAte: dia.nullable(),
+    ativa: z.boolean(),
+  })
+  .refine((m) => (m.colaboradorId === null) !== (m.setor === null), {
+    message: "A meta é de um setor ou de uma pessoa.",
+    path: ["setor"],
+  })
+  .refine((m) => DEFINICAO_METRICA[m.metrica].usavelEmMeta, {
+    message: "Essa métrica não pode virar meta.",
+    path: ["metrica"],
+  })
+  .refine((m) => m.vigenteAte === null || m.vigenteAte >= m.vigenteDesde, {
+    message: "O fim da vigência vem depois do começo.",
+    path: ["vigenteAte"],
+  });
+
+export async function salvarMeta(
+  entrada: z.input<typeof schemaMeta>,
+): Promise<Resultado<{ equipe: DadosEquipe; extra: Meta }>> {
   return executar(async () => {
     const ctx = await exigirUsuario();
     exigir(podeConfigurar(ctx.colaborador));
@@ -324,7 +431,17 @@ export async function salvarMeta(entrada: z.input<typeof schemaMeta>): Promise<R
     await db.transaction(async (tx) => {
       await tx.insert(t.metas).values(meta).onConflictDoUpdate({ target: t.metas.id, set: meta });
       await registrarAtividades(
-        [{ ...autor(ctx), acao: antes ? "edicao" : "criacao", entidade: "meta", entidadeId: meta.id, titulo: `Meta ${meta.nome}`, antes: antes ?? null, depois: meta }],
+        [
+          {
+            ...autor(ctx),
+            acao: antes ? "edicao" : "criacao",
+            entidade: "meta",
+            entidadeId: meta.id,
+            titulo: `Meta ${meta.nome}`,
+            antes: antes ?? null,
+            depois: meta,
+          },
+        ],
         tx,
       );
     });
@@ -338,6 +455,12 @@ export async function excluirMeta(id: string): Promise<Resultado<{ equipe: Dados
     exigir(podeConfigurar(ctx.colaborador));
     const [antes] = await db.select().from(t.metas).where(eq(t.metas.id, schemaId.parse(id))).limit(1);
     if (!antes) throw new ErroDeAcao("Meta não encontrada.");
+    const usada = await db
+      .select({ id: t.recompensas.id })
+      .from(t.recompensas)
+      .where(sql`${t.recompensas.condicao}->>'metaId' = ${antes.id}`)
+      .limit(1);
+    if (usada.length > 0) throw new ErroDeAcao("Uma recompensa depende desta meta. Troque a condição dela antes.");
     await db.transaction(async (tx) => {
       await tx.delete(t.metas).where(eq(t.metas.id, antes.id));
       await registrarAtividades(
@@ -349,6 +472,8 @@ export async function excluirMeta(id: string): Promise<Resultado<{ equipe: Dados
   });
 }
 
+/* ---------------- níveis ---------------- */
+
 const schemaNivel = z.object({
   id: schemaId.optional(),
   nome: z.string().trim().min(1, "Dê um nome ao nível.").max(60),
@@ -356,9 +481,13 @@ const schemaNivel = z.object({
   pontosNecessarios: z.number().int().min(0),
   bonus: centavos,
   icone: z.string().trim().min(1).max(40),
+  cor: z.string().trim().max(40).nullable(),
+  beneficio: textoLivre(200),
 });
 
-export async function salvarNivel(entrada: z.input<typeof schemaNivel>): Promise<Resultado<{ equipe: DadosEquipe; extra: BonusNivel[] }>> {
+export async function salvarNivel(
+  entrada: z.input<typeof schemaNivel>,
+): Promise<Resultado<{ equipe: DadosEquipe; extra: BonusNivel[] }>> {
   return executar(async () => {
     const ctx = await exigirUsuario();
     exigir(podeConfigurar(ctx.colaborador));
@@ -375,34 +504,72 @@ export async function salvarNivel(entrada: z.input<typeof schemaNivel>): Promise
       for (const n of novos) {
         await tx.insert(t.niveis).values(n).onConflictDoUpdate({ target: t.niveis.id, set: n });
       }
-      const colaboradores = await tx.select().from(t.colaboradores);
-      // Quem estava sem nível entra no primeiro degrau.
-      const primeiro = novos[0];
-      const ajustados = colaboradores.map((c) => (c.nivelId || !primeiro ? c : { ...c, nivelId: primeiro.id }));
-      for (const c of ajustados) {
-        if (!colaboradores.find((x) => x.id === c.id)?.nivelId && c.nivelId) {
-          await tx.update(t.colaboradores).set({ nivelId: c.nivelId }).where(eq(t.colaboradores.id, c.id));
-        }
-      }
       await registrarAtividades(
-        [{ ...autor(ctx), acao: antes ? "edicao" : "criacao", entidade: "nivel", entidadeId: nivel.id, titulo: `Nível ${nivel.nome}`, antes, depois: nivel }],
+        [
+          {
+            ...autor(ctx),
+            acao: antes ? "edicao" : "criacao",
+            entidade: "nivel",
+            entidadeId: nivel.id,
+            titulo: `Nível ${nivel.nome}`,
+            antes,
+            depois: nivel,
+          },
+        ],
         tx,
       );
-      return aplicarPromocao(tx, ctx, ajustados, novos);
+      const todos = await tx.select({ id: t.colaboradores.id }).from(t.colaboradores);
+      return atualizarSaldoENivel(tx, todos.map((c) => c.id), autor(ctx));
     });
     return comEquipe(ctx, liberados);
   });
 }
 
+export async function excluirNivel(id: string): Promise<Resultado<{ equipe: DadosEquipe; extra: null }>> {
+  return executar(async () => {
+    const ctx = await exigirUsuario();
+    exigir(podeConfigurar(ctx.colaborador));
+    const alvo = schemaId.parse(id);
+    const [antes] = await db.select().from(t.niveis).where(eq(t.niveis.id, alvo)).limit(1);
+    if (!antes) throw new ErroDeAcao("Nível não encontrado.");
+    const comBonus = await db
+      .select({ id: t.bonusNivel.id })
+      .from(t.bonusNivel)
+      .where(eq(t.bonusNivel.nivelId, alvo))
+      .limit(1);
+    if (comBonus.length > 0) throw new ErroDeAcao("Esse nível já liberou bônus e não pode ser apagado.");
+    await db.transaction(async (tx) => {
+      await tx.update(t.colaboradores).set({ nivelId: null }).where(eq(t.colaboradores.nivelId, alvo));
+      await tx.delete(t.niveis).where(eq(t.niveis.id, alvo));
+      const restantes = reordenarNiveis(await tx.select().from(t.niveis));
+      for (const n of restantes) {
+        await tx.update(t.niveis).set({ ordem: n.ordem }).where(eq(t.niveis.id, n.id));
+      }
+      await registrarAtividades(
+        [{ ...autor(ctx), acao: "exclusao", entidade: "nivel", entidadeId: alvo, titulo: `Nível ${antes.nome} excluído`, antes }],
+        tx,
+      );
+      const todos = await tx.select({ id: t.colaboradores.id }).from(t.colaboradores);
+      await atualizarSaldoENivel(tx, todos.map((c) => c.id), autor(ctx));
+    });
+    return comEquipe(ctx, null);
+  });
+}
+
+/* ---------------- conquistas ---------------- */
+
 const schemaConquista = z.object({
   id: schemaId.optional(),
   nome: z.string().trim().min(1, "Dê um nome à conquista.").max(80),
-  descricao: z.string().trim().max(300),
+  descricao: textoLivre(300),
   icone: z.string().trim().min(1).max(40),
+  metrica: z.enum(METRICAS),
+  operador: z.enum(["maior_igual", "menor_igual"]),
+  valor: z.number().int().min(0).max(1_000_000_000),
+  periodo: z.enum(["diaria", "semanal", "mensal"]),
+  setor: z.enum(["vendas", "financeiro"]).nullable(),
   pontos: z.number().int().min(0).max(100_000),
-  gatilho: z.enum(["meta_diaria", "meta_semanal", "meta_mensal", "domingo_feriado", "dias_trabalhados", "marco"]),
   repetivel: z.boolean(),
-  criterio: z.string().trim().max(300),
   ativa: z.boolean(),
 });
 
@@ -418,7 +585,17 @@ export async function salvarConquista(
     await db.transaction(async (tx) => {
       await tx.insert(t.conquistas).values(conquista).onConflictDoUpdate({ target: t.conquistas.id, set: conquista });
       await registrarAtividades(
-        [{ ...autor(ctx), acao: antes ? "edicao" : "criacao", entidade: "conquista", entidadeId: conquista.id, titulo: `Conquista ${conquista.nome}`, antes: antes ?? null, depois: conquista }],
+        [
+          {
+            ...autor(ctx),
+            acao: antes ? "edicao" : "criacao",
+            entidade: "conquista",
+            entidadeId: conquista.id,
+            titulo: `Conquista ${conquista.nome}`,
+            antes: antes ?? null,
+            depois: conquista,
+          },
+        ],
         tx,
       );
     });
@@ -426,7 +603,33 @@ export async function salvarConquista(
   });
 }
 
-/** Soma os pontos da conquista e devolve os bônus de nível liberados. */
+export async function excluirConquista(
+  id: string,
+): Promise<Resultado<{ equipe: DadosEquipe; extra: null }>> {
+  return executar(async () => {
+    const ctx = await exigirUsuario();
+    exigir(podeConfigurar(ctx.colaborador));
+    const alvo = schemaId.parse(id);
+    const [antes] = await db.select().from(t.conquistas).where(eq(t.conquistas.id, alvo)).limit(1);
+    if (!antes) throw new ErroDeAcao("Conquista não encontrada.");
+    const ja = await db
+      .select({ id: t.conquistasDesbloqueadas.id })
+      .from(t.conquistasDesbloqueadas)
+      .where(eq(t.conquistasDesbloqueadas.conquistaId, alvo))
+      .limit(1);
+    if (ja.length > 0) throw new ErroDeAcao("Alguém já ganhou essa conquista. Desative em vez de apagar.");
+    await db.transaction(async (tx) => {
+      await tx.delete(t.conquistas).where(eq(t.conquistas.id, alvo));
+      await registrarAtividades(
+        [{ ...autor(ctx), acao: "exclusao", entidade: "conquista", entidadeId: alvo, titulo: `Conquista ${antes.nome} excluída`, antes }],
+        tx,
+      );
+    });
+    return comEquipe(ctx, null);
+  });
+}
+
+/** Concede uma conquista à mão. Os pontos entram no extrato como qualquer outro. */
 export async function registrarConquista(
   colaboradorId: string,
   conquistaId: string,
@@ -434,30 +637,213 @@ export async function registrarConquista(
   return executar(async () => {
     const ctx = await admin();
     const liberados = await db.transaction(async (tx) => {
-      const [conquista] = await tx.select().from(t.conquistas).where(eq(t.conquistas.id, schemaId.parse(conquistaId))).limit(1);
+      const [conquista] = await tx
+        .select()
+        .from(t.conquistas)
+        .where(eq(t.conquistas.id, schemaId.parse(conquistaId)))
+        .limit(1);
       if (!conquista || !conquista.ativa) throw new ErroDeAcao("Conquista indisponível.");
-      const colaboradores = await tx.select().from(t.colaboradores);
-      const alvo = colaboradores.find((c) => c.id === colaboradorId);
+      const [alvo] = await tx
+        .select()
+        .from(t.colaboradores)
+        .where(eq(t.colaboradores.id, schemaId.parse(colaboradorId)))
+        .limit(1);
       if (!alvo) throw new ErroDeAcao("Colaborador não encontrado.");
+      if (alvo.setor === "administracao") throw new ErroDeAcao("Administração não pontua.");
       if (!conquista.repetivel) {
         const ja = await tx
           .select({ id: t.conquistasDesbloqueadas.id })
           .from(t.conquistasDesbloqueadas)
-          .where(and(eq(t.conquistasDesbloqueadas.colaboradorId, alvo.id), eq(t.conquistasDesbloqueadas.conquistaId, conquista.id)))
+          .where(
+            and(
+              eq(t.conquistasDesbloqueadas.colaboradorId, alvo.id),
+              eq(t.conquistasDesbloqueadas.conquistaId, conquista.id),
+            ),
+          )
           .limit(1);
         if (ja.length > 0) throw new ErroDeAcao("Essa conquista não se repete e já foi registrada.");
       }
-      const pontos = alvo.pontos + conquista.pontos;
-      await tx.update(t.colaboradores).set({ pontos }).where(eq(t.colaboradores.id, alvo.id));
-      await tx.insert(t.conquistasDesbloqueadas).values({ conquistaId: conquista.id, colaboradorId: alvo.id, desbloqueadaEm: agoraISO() });
+      const agora = agoraISO();
+      await tx.insert(t.conquistasDesbloqueadas).values({
+        conquistaId: conquista.id,
+        colaboradorId: alvo.id,
+        janela: `manual-${agora}`,
+        pontos: conquista.pontos,
+        desbloqueadaEm: agora,
+      });
       await registrarAtividades(
-        [{ ...autor(ctx), acao: "conquista", entidade: "colaborador", entidadeId: alvo.id, titulo: `Conquista ${conquista.nome}`, antes: { pontos: alvo.pontos }, depois: { pontos } }],
+        [
+          {
+            ...autor(ctx),
+            acao: "conquista",
+            entidade: "colaborador",
+            entidadeId: alvo.id,
+            titulo: `Conquista ${conquista.nome}`,
+            descricao: `+${conquista.pontos} pontos, registrada pelo Admin.`,
+            depois: { conquistaId: conquista.id, pontos: conquista.pontos },
+          },
+        ],
         tx,
       );
-      const niveis = await tx.select().from(t.niveis);
-      return aplicarPromocao(tx, ctx, colaboradores.map((c) => (c.id === alvo.id ? { ...c, pontos } : c)), niveis);
+      await lancarPontos(
+        tx,
+        {
+          colaboradorId: alvo.id,
+          setor: alvo.setor as "vendas" | "financeiro",
+          pedidoId: null,
+          pedidoCodigo: null,
+          evento: "conquista",
+          pontos: conquista.pontos,
+          descricao: `Conquista ${conquista.nome}`,
+          regraId: null,
+        },
+        autor(ctx),
+      );
+      const [bonus] = await Promise.all([
+        tx
+          .select()
+          .from(t.bonusNivel)
+          .where(and(eq(t.bonusNivel.colaboradorId, alvo.id), eq(t.bonusNivel.status, "liberado"))),
+      ]);
+      return bonus;
     });
     return comEquipe(ctx, liberados);
+  });
+}
+
+/* ---------------- recompensas ---------------- */
+
+const schemaRecompensa = z
+  .object({
+    id: schemaId.optional(),
+    nome: z.string().trim().min(1, "Dê um nome à recompensa.").max(80),
+    valor: centavos,
+    condicao: z.discriminatedUnion("tipo", [
+      z.object({ tipo: z.literal("meta"), metaId: schemaId }),
+      z.object({
+        tipo: z.literal("metrica"),
+        metrica: z.enum(METRICAS),
+        operador: z.enum(["maior_igual", "menor_igual"]),
+        valor: z.number().int().min(0).max(1_000_000_000),
+      }),
+    ]),
+    periodo: z.enum(["diaria", "semanal", "mensal"]),
+    setor: z.enum(["vendas", "financeiro"]).nullable(),
+    colaboradorId: schemaId.nullable(),
+    vigenteDesde: dia,
+    vigenteAte: dia.nullable(),
+    ativa: z.boolean(),
+  })
+  .refine((r) => r.valor > 0, { message: "A recompensa precisa de um valor.", path: ["valor"] })
+  .refine((r) => r.vigenteAte === null || r.vigenteAte >= r.vigenteDesde, {
+    message: "O fim da vigência vem depois do começo.",
+    path: ["vigenteAte"],
+  });
+
+export async function salvarRecompensa(
+  entrada: z.input<typeof schemaRecompensa>,
+): Promise<Resultado<{ equipe: DadosEquipe; extra: Recompensa }>> {
+  return executar(async () => {
+    const ctx = await exigirUsuario();
+    exigir(podeConfigurar(ctx.colaborador));
+    const dados = schemaRecompensa.parse(entrada);
+    let periodo = dados.periodo;
+    if (dados.condicao.tipo === "meta") {
+      const [meta] = await db.select().from(t.metas).where(eq(t.metas.id, dados.condicao.metaId)).limit(1);
+      if (!meta) throw new ErroDeAcao("Meta não encontrada.");
+      // A janela acompanha a meta: recompensa de meta semanal só fecha na semana.
+      periodo = meta.periodo;
+    }
+    const recompensa: Recompensa = { ...dados, periodo, id: dados.id ?? crypto.randomUUID() };
+    const [antes] = await db.select().from(t.recompensas).where(eq(t.recompensas.id, recompensa.id)).limit(1);
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(t.recompensas)
+        .values(recompensa)
+        .onConflictDoUpdate({ target: t.recompensas.id, set: recompensa });
+      await registrarAtividades(
+        [
+          {
+            ...autor(ctx),
+            acao: antes ? "edicao" : "criacao",
+            entidade: "recompensa",
+            entidadeId: recompensa.id,
+            titulo: `Recompensa ${recompensa.nome}`,
+            antes: antes ?? null,
+            depois: recompensa,
+          },
+        ],
+        tx,
+      );
+    });
+    return comEquipe(ctx, recompensa);
+  });
+}
+
+export async function excluirRecompensa(
+  id: string,
+): Promise<Resultado<{ equipe: DadosEquipe; extra: null }>> {
+  return executar(async () => {
+    const ctx = await exigirUsuario();
+    exigir(podeConfigurar(ctx.colaborador));
+    const alvo = schemaId.parse(id);
+    const [antes] = await db.select().from(t.recompensas).where(eq(t.recompensas.id, alvo)).limit(1);
+    if (!antes) throw new ErroDeAcao("Recompensa não encontrada.");
+    const ja = await db
+      .select({ id: t.recompensasLiberadas.id })
+      .from(t.recompensasLiberadas)
+      .where(eq(t.recompensasLiberadas.recompensaId, alvo))
+      .limit(1);
+    if (ja.length > 0) throw new ErroDeAcao("Essa recompensa já foi liberada para alguém. Desative em vez de apagar.");
+    await db.transaction(async (tx) => {
+      await tx.delete(t.recompensas).where(eq(t.recompensas.id, alvo));
+      await registrarAtividades(
+        [{ ...autor(ctx), acao: "exclusao", entidade: "recompensa", entidadeId: alvo, titulo: `Recompensa ${antes.nome} excluída`, antes }],
+        tx,
+      );
+    });
+    return comEquipe(ctx, null);
+  });
+}
+
+/* ---------------- extrato e fechamento das janelas ---------------- */
+
+/** Extrato de pontos de um período. O próprio colaborador ou o Admin. */
+export async function extratoDePontos(
+  colaboradorId: string,
+  de: string,
+  ate: string,
+): Promise<Resultado<LancamentoPontos[]>> {
+  return executar(async () => {
+    const ctx = await exigirUsuario();
+    const id = schemaId.parse(colaboradorId);
+    exigir(id === ctx.colaborador.id || podeGerirEquipe(ctx.colaborador), "Extrato de outra pessoa é do Admin.");
+    const periodo = z.object({ de: dia, ate: dia }).parse({ de, ate });
+    const intervalo = intervaloDeDias(periodo.de, periodo.ate);
+    const linhas = await db
+      .select()
+      .from(t.lancamentosPontos)
+      .where(
+        and(
+          eq(t.lancamentosPontos.colaboradorId, id),
+          gte(t.lancamentosPontos.ocorridoEm, iso(intervalo.inicio)),
+          intervalo.fim ? lt(t.lancamentosPontos.ocorridoEm, iso(intervalo.fim)) : undefined,
+        ),
+      )
+      .orderBy(desc(t.lancamentosPontos.ocorridoEm));
+    return linhas;
+  });
+}
+
+/**
+ * Fecha as janelas que já terminaram. A rotina diária faz isso sozinha; o
+ * botão existe para conferir na hora, sem esperar a madrugada.
+ */
+export async function avaliarJanelas(): Promise<Resultado<{ equipe: DadosEquipe; extra: ResultadoAvaliacao }>> {
+  return executar(async () => {
+    const ctx = await admin();
+    const resultado = await avaliarJanelasFechadas(autor(ctx));
+    return comEquipe(ctx, resultado);
   });
 }
 
@@ -488,11 +874,11 @@ export async function marcarComoPago(
   return executar(async () => {
     const ctx = await admin();
     const lista = z.array(z.object({ colaboradorId: schemaId, competencia })).min(1).parse(itens);
-    const [colaboradores, metas, niveis, bonusNivel, pedidos] = await Promise.all([
+    const [colaboradores, niveis, bonusNivel, recompensasLiberadas, pedidos] = await Promise.all([
       db.select().from(t.colaboradores),
-      db.select().from(t.metas),
       db.select().from(t.niveis),
       db.select().from(t.bonusNivel),
+      db.select().from(t.recompensasLiberadas),
       carregarPedidos(),
     ]);
     const pagoEm = agoraISO();
@@ -500,7 +886,11 @@ export async function marcarComoPago(
       for (const item of lista) {
         const colaborador = colaboradores.find((c) => c.id === item.colaboradorId);
         if (!colaborador) throw new ErroDeAcao("Colaborador não encontrado.");
-        const fechamento = calcularFechamento(colaborador, item.competencia, pedidos, { metas, niveis, bonusNivel });
+        const fechamento = calcularFechamento(colaborador, item.competencia, pedidos, {
+          niveis,
+          bonusNivel,
+          recompensasLiberadas,
+        });
         const pago = { ...fechamento, status: "pago" as const, pagoEm };
         await tx
           .insert(t.pagamentosColaborador)
@@ -512,6 +902,7 @@ export async function marcarComoPago(
             .set({ status: "pago", pagoEm })
             .where(and(inArray(t.bonusNivel.id, fechamento.bonusNivelIds), eq(t.bonusNivel.status, "liberado")));
         }
+        await quitarRecompensas(tx, fechamento.recompensaIds, pagoEm);
         await registrarAtividades(
           [
             {

@@ -18,6 +18,9 @@ export const metadata: Metadata = {
   title: "Axis — Sistema de gestão",
   description:
     "Gestão de pedidos, envios, cobrança e equipe para venda com pagamento na entrega.",
+  // App na tela de início do iPhone: é o que libera o push no iOS.
+  appleWebApp: { capable: true, title: "Axis", statusBarStyle: "black" },
+  icons: { apple: "/icones/180" },
 };
 
 export const viewport: Viewport = {

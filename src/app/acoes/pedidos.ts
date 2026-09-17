@@ -27,6 +27,7 @@ import * as t from "@/lib/servidor/schema";
 import { mascararPedido } from "@/lib/servidor/dados";
 import { carregarPedidos, gravarPedido } from "@/lib/servidor/repositorio/pedidos";
 import { registrarAtividades } from "@/lib/servidor/atividades";
+import { sincronizarPontosDoPedido } from "@/lib/servidor/pontos";
 import { apagarArquivos, salvarArquivo } from "@/lib/servidor/arquivos";
 import {
   ErroDeAcao,
@@ -423,6 +424,11 @@ export async function excluirPedido(pedidoId: string): Promise<Resultado<string>
       .where(eq(t.anexos.entidadeId, pedido.id));
 
     await db.transaction(async (tx) => {
+      // O extrato estorna o que o pedido rendeu antes de a linha sumir.
+      await sincronizarPontosDoPedido(tx, pedido.id, null, {
+        usuarioId: ctx.colaborador.id,
+        papel: ctx.colaborador.perfil,
+      });
       await tx.delete(t.anexos).where(eq(t.anexos.entidadeId, pedido.id));
       await tx.delete(t.pedidos).where(eq(t.pedidos.id, pedido.id));
       const outros = await tx
@@ -440,7 +446,8 @@ export async function excluirPedido(pedidoId: string): Promise<Resultado<string>
             entidade: "pedido",
             entidadeId: pedido.id,
             titulo: `Pedido ${pedido.codigo} excluído`,
-            antes: { codigo: pedido.codigo, status: pedido.status, valorTotal: pedido.valorTotal },
+            // O vendedor fica para a notificação alcançá-lo depois que o pedido some.
+            antes: { codigo: pedido.codigo, status: pedido.status, valorTotal: pedido.valorTotal, vendedorId: pedido.vendedorId },
           },
         ],
         tx,
@@ -519,6 +526,17 @@ export async function apagarRastreios(ids: string[]): Promise<Resultado<Pedido[]
       );
     });
     return devolver(apagados.map((a) => a.depois.id));
+  });
+}
+
+/**
+ * Relê pedidos que mudaram por mão de outra pessoa (o sino avisou). Devolve os
+ * que ainda existem, mascarados como a lista; os ausentes foram excluídos.
+ */
+export async function relerPedidos(ids: string[]): Promise<Resultado<Pedido[]>> {
+  return executar(async () => {
+    await exigirUsuario();
+    return devolver(z.array(schemaId).min(1).max(200).parse(ids));
   });
 }
 

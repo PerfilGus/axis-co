@@ -7,6 +7,7 @@ import { formatNumero, formatPercentual } from "@/lib/format";
 import { intervaloDoRanking, PERIODOS_RANKING, type PeriodoRanking } from "@/lib/periodos";
 import {
   classificarEquipe,
+  type CriterioRanking,
   type FiltroSetorRanking,
   type PosicaoRanking as Posicao,
 } from "@/lib/ranking";
@@ -46,7 +47,15 @@ function Frustracao({ valor, className }: { valor: number | null; className?: st
 const ALTURA_DEGRAU = ["h-28", "h-20", "h-14"];
 const ORDEM_PODIO = [1, 0, 2];
 
-function Podio({ posicoes, usuarioId }: { posicoes: Posicao[]; usuarioId: string }) {
+function Podio({
+  posicoes,
+  usuarioId,
+  criterio,
+}: {
+  posicoes: Posicao[];
+  usuarioId: string;
+  criterio: CriterioRanking;
+}) {
   return (
     <div className="grid grid-cols-3 items-end gap-2 sm:gap-4">
       {ORDEM_PODIO.map((indice) => {
@@ -86,10 +95,14 @@ function Podio({ posicoes, usuarioId }: { posicoes: Posicao[]; usuarioId: string
               )}
             >
               <span className="tabular text-xl leading-none font-medium">
-                {formatNumero(p.desempenho.pedidos)}
+                {formatNumero(criterio === "pontos" ? p.pontos : p.desempenho.pedidos)}
               </span>
               <span className={cn("text-[11px]", primeiro ? "opacity-75" : "text-muted-fg")}>
-                {unidade(p.colaborador.setor, p.desempenho.pedidos)}
+                {criterio === "pontos"
+                  ? p.pontos === 1
+                    ? "ponto"
+                    : "pontos"
+                  : unidade(p.colaborador.setor, p.desempenho.pedidos)}
               </span>
               <Frustracao
                 valor={p.desempenho.frustracao}
@@ -104,20 +117,32 @@ function Podio({ posicoes, usuarioId }: { posicoes: Posicao[]; usuarioId: string
 }
 
 export default function PaginaEquipeRanking() {
-  const { colaboradores, niveis } = useEquipe();
+  const { colaboradores, niveis, lancamentos } = useEquipe();
   const { pedidos } = usePedidos();
   const { usuario, ehAdmin } = useSessao();
   const [periodo, setPeriodo] = useState<PeriodoRanking>("mes");
+  const [criterio, setCriterio] = useState<CriterioRanking>("pedidos");
   const [setor, setSetor] = useState<FiltroSetor>(
     usuario.setor === "financeiro" ? "financeiro" : "vendas",
   );
 
   const posicoes = useMemo<Posicao[]>(
-    () => classificarEquipe(colaboradores, niveis, pedidos, intervaloDoRanking(periodo), setor),
-    [colaboradores, niveis, pedidos, periodo, setor],
+    () =>
+      classificarEquipe(
+        colaboradores,
+        niveis,
+        pedidos,
+        intervaloDoRanking(periodo),
+        setor,
+        lancamentos,
+        criterio,
+      ),
+    [colaboradores, niveis, pedidos, periodo, setor, lancamentos, criterio],
   );
 
-  const semMovimento = posicoes.every((p) => p.desempenho.pedidos === 0);
+  const semMovimento = posicoes.every((p) =>
+    criterio === "pontos" ? p.pontos === 0 : p.desempenho.pedidos === 0,
+  );
   const demais = posicoes.slice(3);
 
   return (
@@ -141,6 +166,14 @@ export default function PaginaEquipeRanking() {
             ...(ehAdmin ? [{ valor: "todos" as const, rotulo: "Todos" }] : []),
             { valor: "vendas", rotulo: "Vendas", icone: "pedidos" },
             { valor: "financeiro", rotulo: "Financeiro", icone: "cobranca" },
+          ]}
+        />
+        <ControleSegmentado
+          valor={criterio}
+          aoMudar={setCriterio}
+          opcoes={[
+            { valor: "pedidos", rotulo: "Por pedidos" },
+            { valor: "pontos", rotulo: "Por pontos", icone: "medalha" },
           ]}
         />
         <Selecao value={periodo} onValueChange={(v) => setPeriodo(v as PeriodoRanking)}>
@@ -171,7 +204,7 @@ export default function PaginaEquipeRanking() {
                 Nenhum pedido no período ainda. A ordem sai da frustração e do nome.
               </p>
             )}
-            <Podio posicoes={posicoes} usuarioId={usuario.id} />
+            <Podio posicoes={posicoes} usuarioId={usuario.id} criterio={criterio} />
           </Card>
 
           {demais.length > 0 && (
@@ -204,9 +237,13 @@ export default function PaginaEquipeRanking() {
                       </div>
                       <div className="flex flex-col items-end gap-0.5">
                         <span className="tabular text-sm font-medium">
-                          {formatNumero(p.desempenho.pedidos)}{" "}
+                          {formatNumero(criterio === "pontos" ? p.pontos : p.desempenho.pedidos)}{" "}
                           <span className="font-normal text-muted-fg">
-                            {unidade(p.colaborador.setor, p.desempenho.pedidos)}
+                            {criterio === "pontos"
+                              ? p.pontos === 1
+                                ? "ponto"
+                                : "pontos"
+                              : unidade(p.colaborador.setor, p.desempenho.pedidos)}
                           </span>
                         </span>
                         <Frustracao valor={p.desempenho.frustracao} />
@@ -219,7 +256,10 @@ export default function PaginaEquipeRanking() {
           )}
 
           <p className="text-xs text-muted-fg">
-            Empate em pedidos desempata pela menor frustração. A frustração é o que saiu do trilho
+            {criterio === "pontos"
+              ? "Pontos ganhos no período, já com estornos e penalidades. "
+              : ""}
+            Empate desempata pela menor frustração. A frustração é o que saiu do trilho
             (cancelado, reembolsado ou inadimplente) entre os pedidos criados no período.
           </p>
         </>

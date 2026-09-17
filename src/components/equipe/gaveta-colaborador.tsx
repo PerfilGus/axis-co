@@ -13,8 +13,11 @@ import {
 } from "@/lib/format";
 import { calcularFechamento, comissionavel } from "@/lib/comissoes";
 import { desempenhoNo } from "@/lib/desempenho";
-import { descreverRecompensa, formatarAlvo, medirMeta } from "@/lib/metas";
+import { descreverMeta, medirMeta, metasDoColaborador } from "@/lib/metas";
+import { formatarMetrica, type FontesMetricas } from "@/lib/metricas";
+import { rotuloDaJanela } from "@/lib/periodos";
 import { competenciaAtual, janelaDaMeta } from "@/lib/periodos";
+import { ExtratoPontos } from "@/components/shared/extrato-pontos";
 import { useEquipe } from "@/lib/providers/equipe";
 import { progressoNivel } from "@/lib/dominio/equipe";
 import { AcessoColaborador } from "./acesso-colaborador";
@@ -85,7 +88,16 @@ export function GavetaColaborador({
 
 function Conteudo({ colaborador, aoEditar }: { colaborador: Colaborador; aoEditar: () => void }) {
   const equipe = useEquipe();
-  const { niveis, metas, conquistas, desbloqueadas, nomeDe, registrarConquista } = equipe;
+  const {
+    niveis,
+    metas,
+    conquistas,
+    desbloqueadas,
+    lancamentos,
+    recompensasLiberadas,
+    nomeDe,
+    registrarConquista,
+  } = equipe;
   const { pedidos } = usePedidos();
   const { ehAdmin } = useSessao();
   const [conquistaId, setConquistaId] = useState("");
@@ -97,10 +109,19 @@ function Conteudo({ colaborador, aoEditar }: { colaborador: Colaborador; aoEdita
   const desempenho = desempenhoNo(colaborador, pedidos, mes);
   const cobrador = colaborador.setor === "financeiro";
   const fechamento = comissionavel(colaborador)
-    ? calcularFechamento(colaborador, competenciaAtual(), pedidos, equipe)
+    ? calcularFechamento(colaborador, competenciaAtual(), pedidos, {
+        niveis: equipe.niveis,
+        bonusNivel: equipe.bonusNivel,
+        recompensasLiberadas: equipe.recompensasLiberadas,
+      })
     : null;
   const linhaComissao = fechamento?.detalhamento.find((l) => l.grupo === "comissao");
-  const suasMetas = metas.filter((m) => m.colaboradorId === colaborador.id);
+  const fontes: FontesMetricas = { pedidos, lancamentos, metas };
+  const suasMetas = metasDoColaborador(metas, colaborador);
+  const premios = recompensasLiberadas
+    .filter((r) => r.colaboradorId === colaborador.id)
+    .sort((a, b) => b.liberadaEm.localeCompare(a.liberadaEm))
+    .slice(0, 5);
   const recentes = desbloqueadas
     .filter((d) => d.colaboradorId === colaborador.id)
     .sort((a, b) => b.desbloqueadaEm.localeCompare(a.desbloqueadaEm))
@@ -193,7 +214,7 @@ function Conteudo({ colaborador, aoEditar }: { colaborador: Colaborador; aoEdita
         </Bloco>
 
         <Bloco
-          titulo={`Metas · ${suasMetas.length}`}
+          titulo={`Metas ativas · ${suasMetas.length}`}
           acao={
             ehAdmin ? (
               <Botao variante="destaqueSuave" tamanho="sm" onClick={() => setMetaAberta({ meta: null })}>
@@ -205,12 +226,12 @@ function Conteudo({ colaborador, aoEditar }: { colaborador: Colaborador; aoEdita
         >
           {suasMetas.length === 0 ? (
             <p className="text-[13px] text-muted-fg">
-              Sem metas. {cobrador ? "Metas de cobrador contam pedidos pagos." : "Metas de vendedor contam pedidos agendados."}
+              Sem meta ativa. Metas valem para o setor inteiro ou para uma pessoa.
             </p>
           ) : (
             <ul className="flex flex-col gap-2">
               {suasMetas.map((meta) => {
-                const p = medirMeta(meta, colaborador, pedidos);
+                const p = medirMeta(meta, colaborador, fontes);
                 return (
                   <li key={meta.id}>
                     <button
@@ -225,11 +246,17 @@ function Conteudo({ colaborador, aoEditar }: { colaborador: Colaborador; aoEdita
                       <div className="flex items-baseline justify-between gap-3">
                         <span className="text-[13px] font-medium">
                           {meta.nome}
-                          <span className="font-normal text-muted-fg"> · {ROTULO_PERIODO_META[meta.periodo].toLowerCase()}</span>
+                          <span className="font-normal text-muted-fg">
+                            {" "}
+                            · {ROTULO_PERIODO_META[meta.periodo].toLowerCase()}
+                          </span>
                         </span>
                         <span className="tabular text-[13px]">
-                          {formatarAlvo(meta.tipo, p.atual)}
-                          {p.proxima && <span className="text-muted-fg"> de {formatarAlvo(meta.tipo, p.proxima.alvo)}</span>}
+                          {formatarMetrica(meta.metrica, p.atual)}
+                          <span className="text-muted-fg">
+                            {" "}
+                            de {formatarMetrica(meta.metrica, meta.alvo)}
+                          </span>
                         </span>
                       </div>
                       <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
@@ -239,14 +266,38 @@ function Conteudo({ colaborador, aoEditar }: { colaborador: Colaborador; aoEdita
                         />
                       </div>
                       <span className="text-xs text-muted-fg">
-                        {p.atingida
-                          ? `Faixa batida: ${descreverRecompensa(p.atingida)}.`
-                          : `Primeira faixa: ${descreverRecompensa(meta.faixas[0])}.`}
+                        {p.batida ? "Batida nesta janela." : descreverMeta(meta)}
                       </span>
                     </button>
                   </li>
                 );
               })}
+            </ul>
+          )}
+        </Bloco>
+
+        <Bloco titulo="Extrato de pontos">
+          <ExtratoPontos colaboradorId={colaborador.id} />
+        </Bloco>
+
+        <Bloco titulo="Recompensas liberadas">
+          {premios.length === 0 ? (
+            <p className="text-[13px] text-muted-fg">Nenhuma recompensa liberada ainda.</p>
+          ) : (
+            <ul className="flex flex-col">
+              {premios.map((premio) => (
+                <li
+                  key={premio.id}
+                  className="flex items-center justify-between gap-3 border-b border-border py-2 text-[13px] last:border-b-0"
+                >
+                  <span className="min-w-0 flex-1 truncate">{premio.nome}</span>
+                  <span className="text-xs text-muted-fg">{rotuloDaJanela(premio.janela)}</span>
+                  <span className="tabular font-medium">
+                    {formatBRL(premio.valor)}
+                    {premio.status === "pago" ? "" : " · a pagar"}
+                  </span>
+                </li>
+              ))}
             </ul>
           )}
         </Bloco>
@@ -318,12 +369,12 @@ function Conteudo({ colaborador, aoEditar }: { colaborador: Colaborador; aoEdita
                 const conquista = conquistas.find((c) => c.id === d.conquistaId);
                 return (
                   <li
-                    key={`${d.conquistaId}-${d.desbloqueadaEm}-${i}`}
+                    key={`${d.conquistaId}-${d.janela}-${i}`}
                     className="flex items-center justify-between gap-3 border-b border-border py-2 text-[13px] last:border-b-0"
                   >
                     <span>{conquista?.nome ?? "Conquista"}</span>
                     <span className="tabular text-muted-fg">
-                      +{conquista?.pontos ?? 0} · {formatData(d.desbloqueadaEm)}
+                      +{d.pontos} · {formatData(d.desbloqueadaEm)}
                     </span>
                   </li>
                 );

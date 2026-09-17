@@ -33,7 +33,7 @@ import { Tabela, type ColunaTabela, type FiltroTabela } from "@/components/share
 const GRUPOS: Array<{ grupo: LinhaDetalhe["grupo"]; titulo: string; vazio: string }> = [
   { grupo: "fixo", titulo: "Fixo", vazio: "Sem salário fixo." },
   { grupo: "comissao", titulo: "Comissão calculada", vazio: "Sem comissão." },
-  { grupo: "bonus_meta", titulo: "Bônus de meta", vazio: "Nenhuma faixa de meta batida na competência." },
+  { grupo: "bonus_meta", titulo: "Recompensas", vazio: "Nenhuma recompensa liberada na competência." },
   { grupo: "bonus_nivel", titulo: "Bônus de nível", vazio: "Nenhum nível alcançado na competência." },
 ];
 
@@ -241,7 +241,7 @@ export default function PaginaFinanceiroComissoes() {
       },
       {
         chave: "bonusMeta",
-        titulo: "Bônus de meta",
+        titulo: "Recompensas",
         alinhamento: "direita",
         escondeEm: "lg",
         ordenarPor: (f) => f.bonusMeta,
@@ -394,7 +394,7 @@ export default function PaginaFinanceiroComissoes() {
             ? [
                 nomeDe(pagando.colaboradorId),
                 `Fixo ${formatBRL(pagando.fixo)} · comissão ${formatBRL(pagando.comissao)}`,
-                `Bônus de meta ${formatBRL(pagando.bonusMeta)} · de nível ${formatBRL(pagando.bonusNivel)}`,
+                `Recompensas ${formatBRL(pagando.bonusMeta)} · bônus de nível ${formatBRL(pagando.bonusNivel)}`,
                 `Total: ${formatBRL(pagando.total)}`,
                 `Pix: ${colaboradores.find((c) => c.id === pagando.colaboradorId)?.chavePix ?? "sem chave"}`,
               ]

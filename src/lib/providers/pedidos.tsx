@@ -67,6 +67,8 @@ interface ContextoPedidos {
   buscarPorTelefone: (termo: string) => Promise<ID[] | null>;
   /** Busca global: ids dos pedidos do escopo cujo telefone ou CPF completo contém os dígitos. */
   buscarPorDocumento: (termo: string) => Promise<ID[] | null>;
+  /** Relê do banco pedidos que outra pessoa mudou; tira da lista os excluídos. */
+  recarregar: (ids: ID[]) => Promise<void>;
   /** Abrir o pedido consome o destaque daquele rastreio. */
   limparDestaque: (pedidoId: ID) => void;
   /** Zera o destaque de todos de uma vez, sem abrir um por um. */
@@ -223,6 +225,19 @@ export function PedidosProvider({ inicial, children }: { inicial: Pedido[]; chil
     [],
   );
 
+  const recarregar = useCallback<ContextoPedidos["recarregar"]>(async (ids) => {
+    if (ids.length === 0) return;
+    const lidos = await chamar(acoes.relerPedidos(ids));
+    if (!lidos) return;
+    const existentes = new Set(lidos.map((p) => p.id));
+    setPedidos((atual) =>
+      mesclar(
+        atual.filter((p) => !ids.includes(p.id) || existentes.has(p.id)),
+        lidos,
+      ),
+    );
+  }, []);
+
   const buscarPorDocumento = useCallback<ContextoPedidos["buscarPorDocumento"]>(
     (termo) => chamar(acoes.buscarPedidosPorDocumento(termo)),
     [],
@@ -266,6 +281,7 @@ export function PedidosProvider({ inicial, children }: { inicial: Pedido[]; chil
       apagarRastreio,
       buscarPorTelefone,
       buscarPorDocumento,
+      recarregar,
       limparDestaque,
       redefinirDestaques,
       atualizarRastreios,
@@ -287,6 +303,7 @@ export function PedidosProvider({ inicial, children }: { inicial: Pedido[]; chil
       apagarRastreio,
       buscarPorTelefone,
       buscarPorDocumento,
+      recarregar,
       limparDestaque,
       redefinirDestaques,
       atualizarRastreios,

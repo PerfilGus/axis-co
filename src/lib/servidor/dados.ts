@@ -1,5 +1,5 @@
 import "server-only";
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq, gte } from "drizzle-orm";
 import type {
   AliquotaMensal,
   BancoPlataforma,
@@ -14,6 +14,7 @@ import type {
   FaturaFornecedor,
   Kit,
   LancamentoMetaAds,
+  LancamentoPontos,
   LinhaWhatsApp,
   Meta,
   Nivel,
@@ -22,13 +23,20 @@ import type {
   ParametrosFornecedor,
   Pedido,
   Produto,
+  Recompensa,
+  RecompensaLiberada,
+  RegraPontuacao,
 } from "@/lib/types";
 import { ocultarCPF, ocultarTelefone } from "@/lib/format";
+import { iso } from "@/lib/iso";
+import { competenciaAnterior, competenciaAtual, hoje, intervaloDeDias } from "@/lib/periodos";
 import { podeVerFinanceiro, podeVerMarketing, ehAdmin } from "@/lib/permissoes";
 import { db } from "./db";
 import * as t from "./schema";
 import { carregarPedidos, urlDoAnexo } from "./repositorio/pedidos";
 import type { ContextoSessao } from "./sessao";
+import type { EstadoNotificacoes } from "@/lib/notificacoes";
+import { carregarNotificacoes } from "./notificacoes";
 
 /**
  * O que a interface recebe ao abrir o sistema.
@@ -40,12 +48,20 @@ import type { ContextoSessao } from "./sessao";
 
 export interface DadosEquipe {
   colaboradores: Colaborador[];
+  regras: RegraPontuacao[];
   metas: Meta[];
   niveis: Nivel[];
   conquistas: Conquista[];
   desbloqueadas: ConquistaDesbloqueada[];
+  recompensas: Recompensa[];
+  recompensasLiberadas: RecompensaLiberada[];
   bonusNivel: BonusNivel[];
   pagamentos: PagamentoColaborador[];
+  /**
+   * Extrato desde o começo do mês passado: é o que metas, ranking e Minha área
+   * precisam medir. Período mais longo vem pela ação `extratoDePontos`.
+   */
+  lancamentos: LancamentoPontos[];
 }
 
 export interface DadosCadastros {
@@ -79,6 +95,7 @@ export interface DadosIniciais {
   pedidos: Pedido[];
   financeiro: DadosFinanceiro;
   marketing: DadosMarketing;
+  notificacoes: EstadoNotificacoes;
 }
 
 export const PARAMETROS_VAZIOS: ParametrosFornecedor = {
@@ -107,29 +124,60 @@ function recortarColaborador(c: Colaborador, quem: Colaborador): Colaborador {
 }
 
 export async function carregarEquipe(quem: Colaborador): Promise<DadosEquipe> {
-  const [colaboradores, metas, niveis, conquistas, desbloqueadas, bonus, pagamentos] =
-    await Promise.all([
-      db.select().from(t.colaboradores).orderBy(asc(t.colaboradores.nome)),
-      db.select().from(t.metas),
-      db.select().from(t.niveis).orderBy(asc(t.niveis.ordem)),
-      db.select().from(t.conquistas),
-      db.select().from(t.conquistasDesbloqueadas),
-      db.select().from(t.bonusNivel),
-      db.select().from(t.pagamentosColaborador),
-    ]);
-  const admin = ehAdmin(quem);
-  return {
-    colaboradores: colaboradores.map((c) => recortarColaborador(c, quem)),
-    metas: admin ? metas : metas.filter((m) => m.colaboradorId === quem.id),
+  const desde = iso(intervaloDeDias(`${competenciaAnterior(competenciaAtual())}-01`, hoje()).inicio);
+  const [
+    colaboradores,
+    regras,
+    metas,
     niveis,
     conquistas,
-    desbloqueadas: desbloqueadas.map(({ conquistaId, colaboradorId, desbloqueadaEm }) => ({
+    desbloqueadas,
+    recompensas,
+    liberadas,
+    bonus,
+    pagamentos,
+    lancamentos,
+  ] = await Promise.all([
+    db.select().from(t.colaboradores).orderBy(asc(t.colaboradores.nome)),
+    db.select().from(t.regrasPontuacao).orderBy(asc(t.regrasPontuacao.vigenteDesde)),
+    db.select().from(t.metas),
+    db.select().from(t.niveis).orderBy(asc(t.niveis.ordem)),
+    db.select().from(t.conquistas),
+    db.select().from(t.conquistasDesbloqueadas),
+    db.select().from(t.recompensas),
+    db.select().from(t.recompensasLiberadas),
+    db.select().from(t.bonusNivel),
+    db.select().from(t.pagamentosColaborador),
+    db
+      .select()
+      .from(t.lancamentosPontos)
+      .where(gte(t.lancamentosPontos.ocorridoEm, desde))
+      .orderBy(desc(t.lancamentosPontos.ocorridoEm)),
+  ]);
+  const admin = ehAdmin(quem);
+  const meuOuTodos = <T extends { colaboradorId: string }>(lista: T[]) =>
+    admin ? lista : lista.filter((x) => x.colaboradorId === quem.id);
+  return {
+    colaboradores: colaboradores.map((c) => recortarColaborador(c, quem)),
+    regras,
+    metas,
+    niveis,
+    conquistas,
+    desbloqueadas: desbloqueadas.map(({ conquistaId, colaboradorId, janela, pontos, desbloqueadaEm }) => ({
       conquistaId,
       colaboradorId,
+      janela,
+      pontos,
       desbloqueadaEm,
     })),
-    bonusNivel: admin ? bonus : bonus.filter((b) => b.colaboradorId === quem.id),
-    pagamentos: admin ? pagamentos : pagamentos.filter((p) => p.colaboradorId === quem.id),
+    recompensas: admin
+      ? recompensas
+      : recompensas.filter((r) => r.colaboradorId === null || r.colaboradorId === quem.id),
+    recompensasLiberadas: meuOuTodos(liberadas),
+    bonusNivel: meuOuTodos(bonus),
+    pagamentos: meuOuTodos(pagamentos),
+    // O extrato de todos alimenta o ranking por pontos; não tem dado de cliente.
+    lancamentos,
   };
 }
 
@@ -214,12 +262,13 @@ export async function carregarMarketing(quem: Colaborador): Promise<DadosMarketi
 
 export async function carregarDadosIniciais(ctx: ContextoSessao): Promise<DadosIniciais> {
   const quem = ctx.colaborador;
-  const [equipe, cadastros, pedidos, financeiro, marketing] = await Promise.all([
+  const [equipe, cadastros, pedidos, financeiro, marketing, notificacoes] = await Promise.all([
     carregarEquipe(quem),
     carregarCadastros(quem),
     carregarPedidos(),
     carregarFinanceiro(quem),
     carregarMarketing(quem),
+    carregarNotificacoes(quem),
   ]);
   return {
     usuario: quem,
@@ -230,5 +279,6 @@ export async function carregarDadosIniciais(ctx: ContextoSessao): Promise<DadosI
     pedidos: pedidos.map(mascararPedido),
     financeiro,
     marketing,
+    notificacoes,
   };
 }

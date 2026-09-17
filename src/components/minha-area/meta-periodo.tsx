@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import type { Colaborador, Meta, PeriodoMeta, Pedido } from "@/lib/types";
-import { formatBRL, formatBps } from "@/lib/format";
-import { faixasOrdenadas, medirMeta } from "@/lib/metas";
-import { janelaDaMeta } from "@/lib/periodos";
-import { unidadeDaMeta, valorDaFaixa } from "@/lib/minha-area";
+import type { Colaborador, Meta, PeriodoMeta, Recompensa, RecompensaLiberada } from "@/lib/types";
+import { formatBRL } from "@/lib/format";
+import { janelaCorrente } from "@/lib/periodos";
+import { medirMeta } from "@/lib/metas";
+import { formatarMetrica, type FontesMetricas } from "@/lib/metricas";
+import { recompensaVale } from "@/lib/recompensas";
 import { Icone } from "@/components/icone";
 import { Card } from "@/components/ui/card";
 import { CardPremiacao } from "@/components/shared/card-premiacao";
@@ -19,18 +20,22 @@ const ROTULO_JANELA: Record<PeriodoMeta, string> = {
 };
 
 /**
- * A meta do período numa barra que enche até a próxima faixa, com o que ele
- * ganha ao bater. Batida a primeira faixa, vira o card de premiação.
+ * A meta da janela numa barra que enche até o alvo, com a recompensa que vem
+ * junto. Batida, vira o card de premiação.
  */
 export function MetaDoPeriodo({
   colaborador,
   metas,
-  pedidos,
+  recompensas,
+  liberadas,
+  fontes,
 }: {
   colaborador: Colaborador;
   /** Só as ativas do colaborador, já ordenadas. */
   metas: Meta[];
-  pedidos: Pedido[];
+  recompensas: Recompensa[];
+  liberadas: RecompensaLiberada[];
+  fontes: FontesMetricas;
 }) {
   const [metaId, setMetaId] = useState<string | null>(null);
   const meta = metas.find((m) => m.id === metaId) ?? metas[0];
@@ -41,12 +46,11 @@ export function MetaDoPeriodo({
         compacto
         icone="metas"
         titulo="Você ainda não tem meta ativa"
-        descricao="Quando o Admin cadastrar a sua em Metas, níveis e conquistas, o progresso aparece aqui."
+        descricao="Quando o Admin cadastrar a sua em Pontos e metas, o progresso aparece aqui."
       />
     );
   }
 
-  const faixas = faixasOrdenadas(meta);
   const periodosRepetidos = new Set(metas.map((m) => m.periodo)).size < metas.length;
   const seletor =
     metas.length > 1 ? (
@@ -61,57 +65,45 @@ export function MetaDoPeriodo({
       />
     ) : null;
 
-  if (faixas.length === 0) {
-    return (
-      <div className="flex flex-col gap-3">
-        {seletor}
-        <EstadoVazio
-          compacto
-          icone="metas"
-          titulo={`${meta.nome} ainda sem faixas`}
-          descricao="A meta existe, mas sem alvo. Peça ao Admin para definir as faixas."
-        />
-      </div>
-    );
-  }
+  const janela = janelaCorrente(meta.periodo);
+  const { atual, batida, progresso } = medirMeta(meta, colaborador, fontes, janela);
 
-  const janela = janelaDaMeta(meta.periodo);
-  const { atual, atingida, proxima, progresso } = medirMeta(meta, colaborador, pedidos, janela);
+  // O que essa meta paga: recompensa com condição nesta meta, valendo na janela.
+  const premios = recompensas.filter(
+    (r) =>
+      r.condicao.tipo === "meta" &&
+      r.condicao.metaId === meta.id &&
+      recompensaVale(r, colaborador, janela),
+  );
+  const valorDosPremios = premios.reduce((s, r) => s + r.valor, 0);
+  const jaLiberada = liberadas.some(
+    (l) => premios.some((p) => p.id === l.recompensaId) && l.janela === janela.chave,
+  );
 
-  const recompensa = (faixa: (typeof faixas)[number]) => {
-    const { valor, estimado } = valorDaFaixa(faixa, colaborador, pedidos, janela);
-    if (!estimado) return `+${formatBRL(valor)}`;
-    return `+${formatBps(faixa.valor)} de comissão${valor > 0 ? ` (≈ ${formatBRL(valor)} até agora)` : ""}`;
-  };
-  /** `Falta 1 agendado` ou `Faltam R$ 200,00`. */
-  const falta = (alvo: number) => {
-    const resto = Math.max(alvo - atual, 0);
-    const verbo = meta.tipo === "pedidos" && resto === 1 ? "Falta" : "Faltam";
-    return `${verbo} ${unidadeDaMeta(colaborador, meta.tipo, resto)}`;
-  };
+  const alvo = formatarMetrica(meta.metrica, meta.alvo);
+  const agora = formatarMetrica(meta.metrica, atual);
 
-  if (atingida) {
+  if (batida) {
     return (
       <div className="flex flex-col gap-3">
         {seletor}
         <CardPremiacao
-          key={`${meta.id}-${atingida.id}`}
+          key={`${meta.id}-${janela.chave}`}
           animar
           icone="ranking"
-          titulo={proxima ? "Meta batida!" : "Todas as faixas batidas!"}
-          descricao={`${meta.nome}: ${unidadeDaMeta(colaborador, meta.tipo, atual)}. Você garantiu ${recompensa(atingida)}.`}
-          progresso={proxima ? progresso : undefined}
+          titulo="Meta batida!"
+          descricao={`${meta.nome}: ${agora} de ${alvo}.`}
           rodape={
-            proxima
-              ? `${falta(proxima.alvo)} para a próxima faixa: ${recompensa(proxima)}. Vale a faixa mais alta, não a soma.`
-              : "Não há faixa acima desta no período. Aproveite o embalo para a próxima conquista."
+            valorDosPremios > 0
+              ? jaLiberada
+                ? `Recompensa de ${formatBRL(valorDosPremios)} já liberada; entra no fechamento do mês.`
+                : `Vale ${formatBRL(valorDosPremios)}, liberado quando a janela fechar.`
+              : "Sem recompensa em dinheiro nesta meta — mas os pontos do período seguem contando."
           }
         />
       </div>
     );
   }
-
-  const alvo = proxima ?? faixas[faixas.length - 1];
 
   return (
     <div className="flex flex-col gap-3">
@@ -121,14 +113,15 @@ export function MetaDoPeriodo({
           <div className="flex min-w-0 flex-col gap-0.5">
             <h2 className="text-base font-medium tracking-tight">{meta.nome}</h2>
             <p className="tabular text-[13px] text-muted-fg">
-              {unidadeDaMeta(colaborador, meta.tipo, atual)} de{" "}
-              {unidadeDaMeta(colaborador, meta.tipo, alvo.alvo)}
+              {agora} de {alvo}
             </p>
           </div>
-          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--accent-soft)] px-3 py-1.5 text-[13px] font-medium text-fg">
-            <Icone nome="dinheiro" size={14} className="text-[var(--accent)]" />
-            {recompensa(alvo)}
-          </span>
+          {valorDosPremios > 0 && (
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--accent-soft)] px-3 py-1.5 text-[13px] font-medium text-fg">
+              <Icone nome="dinheiro" size={14} className="text-[var(--accent)]" />
+              {formatBRL(valorDosPremios)}
+            </span>
+          )}
         </div>
 
         <div
@@ -146,9 +139,9 @@ export function MetaDoPeriodo({
         </div>
 
         <p className="text-[13px] text-muted-fg">
-          <span className="tabular font-medium text-fg">{falta(alvo.alvo)}</span> para ganhar{" "}
-          {recompensa(alvo)}.
-          {faixas.length > 1 && ` São ${faixas.length} faixas; vale a mais alta que você bater.`}
+          {ROTULO_JANELA[meta.periodo]}: falta chegar a{" "}
+          <span className="tabular font-medium text-fg">{alvo}</span>
+          {valorDosPremios > 0 && ` para ganhar ${formatBRL(valorDosPremios)}`}.
         </p>
       </Card>
     </div>

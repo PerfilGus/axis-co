@@ -1,5 +1,7 @@
 import "server-only";
 import { headers } from "next/headers";
+import { after } from "next/server";
+import { ACOES_NOTIFICAVEIS, ENTIDADES_NOTIFICAVEIS } from "@/lib/notificacoes";
 import { agoraISO } from "@/lib/iso";
 import { db, type Transacao } from "./db";
 import { atividades } from "./schema";
@@ -57,16 +59,44 @@ function linha(a: NovaAtividade, origem?: { ip: string | null; userAgent: string
   };
 }
 
+/**
+ * Push das atividades que podem virar notificação, depois da resposta. Se a
+ * transação que as gravou desfizer, o envio não as encontra e não manda nada.
+ * Fora de uma requisição (seed, script) não há `after`: simplesmente não envia.
+ */
+function agendarPush(linhas: Array<{ id: string; acao: string; entidade: string }>) {
+  const ids = linhas
+    .filter((l) => ACOES_NOTIFICAVEIS.includes(l.acao) && ENTIDADES_NOTIFICAVEIS.includes(l.entidade))
+    .map((l) => l.id);
+  if (ids.length === 0) return;
+  try {
+    after(async () => {
+      try {
+        const { enviarPushDasAtividades } = await import("./push");
+        await enviarPushDasAtividades(ids);
+      } catch (erro) {
+        console.error("[push]", erro);
+      }
+    });
+  } catch {
+    // sem contexto de requisição
+  }
+}
+
 export async function registrarAtividades(
   lista: NovaAtividade[],
   tx: Transacao | typeof db = db,
 ): Promise<void> {
   if (lista.length === 0) return;
-  await tx.insert(atividades).values(lista.map((a) => linha(a)));
+  const linhas = lista.map((a) => linha(a));
+  await tx.insert(atividades).values(linhas);
+  agendarPush(linhas);
 }
 
 /** Evento de segurança: grava também IP e navegador. */
 export async function registrarAtividadeSeguranca(a: NovaAtividade): Promise<void> {
   const origem = await origemDaRequisicao();
-  await db.insert(atividades).values(linha(a, origem));
+  const nova = linha(a, origem);
+  await db.insert(atividades).values(nova);
+  agendarPush([nova]);
 }

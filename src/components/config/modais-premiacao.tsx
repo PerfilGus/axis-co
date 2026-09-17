@@ -1,13 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import type { Conquista, GatilhoConquista, Nivel } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import type { Conquista, Metrica, Nivel, Operador, PeriodoMeta, SetorPontuavel } from "@/lib/types";
+import { ROTULO_PERIODO_META } from "@/lib/types";
 import { centavosParaCampo, formatBRL, parseBRL } from "@/lib/format";
+import { ehChaveCor, type ChaveCor } from "@/lib/cores";
+import {
+  DEFINICAO_METRICA,
+  descreverCondicao,
+  metricasDoSetor,
+  ROTULO_OPERADOR,
+} from "@/lib/metricas";
 import { useEquipe } from "@/lib/providers/equipe";
 import { Icone, type NomeIcone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
 import { Modal, ModalCabecalho, ModalConteudo, ModalRodape } from "@/components/ui/dialog";
-import { Campo } from "@/components/ui/label";
+import { Campo, Label } from "@/components/ui/label";
 import { Input, Textarea } from "@/components/ui/input";
 import {
   Selecao,
@@ -17,18 +26,219 @@ import {
   SelecaoValor,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
+import { ControleSegmentado } from "@/components/shared/controles";
+import { ModalConfirmacao } from "@/components/shared/modal-confirmacao";
+import { SeletorCor } from "@/components/shared/seletor-cor";
 import { CampoAtivo } from "./modais-catalogo";
 
 type Erros = Record<string, string>;
 
-export const ROTULO_GATILHO: Record<GatilhoConquista, { rotulo: string; icone: NomeIcone }> = {
-  meta_diaria: { rotulo: "Meta diária batida", icone: "metas" },
-  meta_semanal: { rotulo: "Meta semanal batida", icone: "tendencia" },
-  meta_mensal: { rotulo: "Meta mensal batida", icone: "medalha" },
-  domingo_feriado: { rotulo: "Trabalho em domingo ou feriado", icone: "calendario" },
-  dias_trabalhados: { rotulo: "Dias trabalhados", icone: "relogio" },
-  marco: { rotulo: "Marco único", icone: "aparencia" },
-};
+/** Ícones que servem para nível e conquista. */
+export const ICONES_PREMIACAO: NomeIcone[] = [
+  "medalha",
+  "ranking",
+  "metas",
+  "tendencia",
+  "escudo",
+  "relogio",
+  "calendario",
+  "dinheiro",
+  "pix",
+  "pedidos",
+  "cobranca",
+  "checkCircle",
+];
+
+export function SeletorIcone({
+  valor,
+  aoMudar,
+}: {
+  valor: NomeIcone;
+  aoMudar: (icone: NomeIcone) => void;
+}) {
+  return (
+    <div role="radiogroup" aria-label="Ícone" className="flex flex-wrap gap-2">
+      {ICONES_PREMIACAO.map((icone) => (
+        <button
+          key={icone}
+          type="button"
+          role="radio"
+          aria-checked={icone === valor}
+          aria-label={icone}
+          onClick={() => aoMudar(icone)}
+          className={cn(
+            "flex size-11 items-center justify-center rounded-full border-2 transition-colors",
+            icone === valor
+              ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
+              : "border-transparent bg-surface-2 text-muted-fg hover:text-fg",
+          )}
+        >
+          <Icone nome={icone} size={18} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** `R$ 800,00` ou `Sem bônus`. */
+export function rotuloBonus(valor: number): string {
+  return valor > 0 ? formatBRL(valor) : "Sem bônus";
+}
+
+/** Escolha de setor usada em conquistas, metas e recompensas. */
+export function CampoSetor({
+  valor,
+  aoMudar,
+  rotulo = "Para quem",
+}: {
+  valor: SetorPontuavel | null;
+  aoMudar: (setor: SetorPontuavel | null) => void;
+  rotulo?: string;
+}) {
+  return (
+    <Campo rotulo={rotulo}>
+      <ControleSegmentado
+        valor={valor ?? "todos"}
+        aoMudar={(v) => aoMudar(v === "todos" ? null : (v as SetorPontuavel))}
+        opcoes={[
+          { valor: "todos", rotulo: "Todos" },
+          { valor: "vendas", rotulo: "Vendedores" },
+          { valor: "financeiro", rotulo: "Financeiro" },
+        ]}
+      />
+    </Campo>
+  );
+}
+
+/**
+ * Métrica + condição + valor: o mesmo trio na conquista, na meta e na
+ * recompensa, para uma regra nunca significar coisas diferentes em telas
+ * diferentes.
+ */
+export function CampoCondicao({
+  setor,
+  metrica,
+  operador,
+  valor,
+  erro,
+  somenteMetas = false,
+  aoMudar,
+}: {
+  setor: SetorPontuavel | null;
+  metrica: Metrica;
+  operador: Operador;
+  valor: string;
+  erro?: string;
+  somenteMetas?: boolean;
+  aoMudar: (dados: { metrica: Metrica; operador: Operador; valor: string }) => void;
+}) {
+  const disponiveis = metricasDoSetor(setor, somenteMetas);
+  const def = DEFINICAO_METRICA[metrica];
+  const dica =
+    def.unidade === "dinheiro" ? "R$ 1.000,00" : def.unidade === "taxa" ? "20%" : "10";
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Campo rotulo="O que conta" ajuda={def.descricao}>
+        <Selecao
+          value={metrica}
+          onValueChange={(v) =>
+            aoMudar({
+              metrica: v as Metrica,
+              operador: DEFINICAO_METRICA[v as Metrica].sentido,
+              valor: "",
+            })
+          }
+        >
+          <SelecaoGatilho>
+            <SelecaoValor />
+          </SelecaoGatilho>
+          <SelecaoConteudo>
+            {disponiveis.map((m) => (
+              <SelecaoItem key={m.chave} value={m.chave}>
+                {m.rotulo}
+              </SelecaoItem>
+            ))}
+          </SelecaoConteudo>
+        </Selecao>
+      </Campo>
+      <div className="grid gap-3 sm:grid-cols-[1fr_1fr]">
+        <Campo rotulo="Condição">
+          <Selecao
+            value={operador}
+            onValueChange={(v) => aoMudar({ metrica, operador: v as Operador, valor })}
+          >
+            <SelecaoGatilho>
+              <SelecaoValor />
+            </SelecaoGatilho>
+            <SelecaoConteudo>
+              {(Object.keys(ROTULO_OPERADOR) as Operador[]).map((o) => (
+                <SelecaoItem key={o} value={o}>
+                  {ROTULO_OPERADOR[o]}
+                </SelecaoItem>
+              ))}
+            </SelecaoConteudo>
+          </Selecao>
+        </Campo>
+        <Campo rotulo="Valor" obrigatorio erro={erro}>
+          <Input
+            value={valor}
+            onChange={(e) => aoMudar({ metrica, operador, valor: e.target.value })}
+            inputMode={def.unidade === "quantidade" ? "numeric" : "decimal"}
+            className="tabular"
+            placeholder={dica}
+          />
+        </Campo>
+      </div>
+    </div>
+  );
+}
+
+/** Texto do campo → número na unidade da métrica. */
+export function valorDaMetrica(metrica: Metrica, texto: string): number | null {
+  const def = DEFINICAO_METRICA[metrica];
+  if (def.unidade === "dinheiro") return parseBRL(texto);
+  if (def.unidade === "taxa") {
+    const limpo = texto.replace(/[^\d,.]/g, "").replace(",", ".");
+    if (limpo === "") return null;
+    const numero = Number(limpo);
+    return Number.isFinite(numero) ? Math.round(numero * 100) : null;
+  }
+  const numero = Number(texto.replace(/\D/g, ""));
+  return Number.isFinite(numero) && texto.trim() !== "" ? numero : null;
+}
+
+/** Número na unidade da métrica → texto do campo. */
+export function campoDaMetrica(metrica: Metrica, valor: number): string {
+  const def = DEFINICAO_METRICA[metrica];
+  if (def.unidade === "dinheiro") return centavosParaCampo(valor);
+  if (def.unidade === "taxa") return String(valor / 100).replace(".", ",");
+  return String(valor);
+}
+
+export const PERIODOS: PeriodoMeta[] = ["diaria", "semanal", "mensal"];
+
+export function CampoPeriodo({
+  valor,
+  aoMudar,
+  rotulo = "Janela",
+  ajuda,
+}: {
+  valor: PeriodoMeta;
+  aoMudar: (periodo: PeriodoMeta) => void;
+  rotulo?: string;
+  ajuda?: string;
+}) {
+  return (
+    <Campo rotulo={rotulo} ajuda={ajuda}>
+      <ControleSegmentado
+        valor={valor}
+        aoMudar={aoMudar}
+        opcoes={PERIODOS.map((p) => ({ valor: p, rotulo: ROTULO_PERIODO_META[p] }))}
+      />
+    </Campo>
+  );
+}
 
 /* ================================================================
    Nível
@@ -48,11 +258,17 @@ export function ModalNivel({
 }
 
 function FormularioNivel({ nivel, aoFechar }: { nivel: Nivel | null; aoFechar: () => void }) {
-  const { niveis, salvarNivel, nomeDe } = useEquipe();
+  const { niveis, salvarNivel, excluirNivel, nomeDe } = useEquipe();
   const [nome, setNome] = useState(nivel?.nome ?? "");
   const [pontos, setPontos] = useState(nivel ? String(nivel.pontosNecessarios) : "");
   const [bonus, setBonus] = useState(centavosParaCampo(nivel?.bonus ?? null));
+  const [beneficio, setBeneficio] = useState(nivel?.beneficio ?? "");
+  const [icone, setIcone] = useState<NomeIcone>((nivel?.icone as NomeIcone) ?? "medalha");
+  const [cor, setCor] = useState<ChaveCor | null>(
+    nivel?.cor && ehChaveCor(nivel.cor) ? nivel.cor : null,
+  );
   const [erros, setErros] = useState<Erros>({});
+  const [excluindo, setExcluindo] = useState(false);
 
   async function salvar() {
     const e: Erros = {};
@@ -73,7 +289,9 @@ function FormularioNivel({ nivel, aoFechar }: { nivel: Nivel | null; aoFechar: (
       pontosNecessarios: minimo,
       bonus: bonusCentavos,
       ordem: nivel?.ordem ?? niveis.length + 1,
-      icone: nivel?.icone ?? "medalha",
+      icone,
+      cor,
+      beneficio: beneficio.trim(),
     });
     if (!liberados) return;
     toast.success(nivel ? "Nível atualizado" : "Nível criado", {
@@ -87,7 +305,7 @@ function FormularioNivel({ nivel, aoFechar }: { nivel: Nivel | null; aoFechar: (
 
   return (
     <Modal open onOpenChange={(v) => !v && aoFechar()}>
-      <ModalConteudo larguraMaxima="max-w-md">
+      <ModalConteudo larguraMaxima="max-w-lg">
         <ModalCabecalho
           titulo={nivel ? `Editar ${nivel.nome}` : "Novo nível"}
           descricao="Quem chega à pontuação sobe de nível e tem o bônus liberado."
@@ -116,12 +334,33 @@ function FormularioNivel({ nivel, aoFechar }: { nivel: Nivel | null; aoFechar: (
               />
             </Campo>
           </div>
+          <Campo rotulo="Benefício do nível" ajuda="Opcional. Aparece para o colaborador.">
+            <Input
+              value={beneficio}
+              onChange={(e) => setBeneficio(e.target.value)}
+              placeholder="Folga no aniversário"
+            />
+          </Campo>
+          <div className="flex flex-col gap-2">
+            <Label>Ícone</Label>
+            <SeletorIcone valor={icone} aoMudar={setIcone} />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label>Cor do nível</Label>
+            <SeletorCor valor={cor} aoMudar={setCor} rotulo="Cor do nível" />
+          </div>
           <p className="text-xs text-muted-fg">
-            Baixar a pontuação pode fazer alguém subir na hora. Ninguém é rebaixado, e o bônus de
-            um nível só é liberado uma vez.
+            Perdendo pontos, alguém pode cair de nível — a tolerância fica na aba Pontuação. O
+            bônus de um nível é pago uma vez só.
           </p>
         </div>
         <ModalRodape>
+          {nivel && (
+            <Botao variante="fantasma" className="mr-auto" onClick={() => setExcluindo(true)}>
+              <Icone nome="excluir" size={15} />
+              Excluir
+            </Botao>
+          )}
           <Botao variante="secundaria" onClick={aoFechar}>
             Cancelar
           </Botao>
@@ -131,6 +370,23 @@ function FormularioNivel({ nivel, aoFechar }: { nivel: Nivel | null; aoFechar: (
           </Botao>
         </ModalRodape>
       </ModalConteudo>
+
+      <ModalConfirmacao
+        aberto={excluindo}
+        titulo="Excluir nível"
+        mensagem="Quem está nele é reavaliado pela pontuação. Nível que já liberou bônus não pode ser excluído."
+        perigo
+        icone="excluir"
+        rotuloConfirmar="Excluir"
+        aoCancelar={() => setExcluindo(false)}
+        aoConfirmar={async () => {
+          if (nivel && (await excluirNivel(nivel.id))) {
+            toast.success("Nível excluído");
+            aoFechar();
+          }
+          setExcluindo(false);
+        }}
+      />
     </Modal>
   );
 }
@@ -159,66 +415,93 @@ function FormularioConquista({
   conquista: Conquista | null;
   aoFechar: () => void;
 }) {
-  const { salvarConquista } = useEquipe();
+  const { salvarConquista, excluirConquista } = useEquipe();
   const [nome, setNome] = useState(conquista?.nome ?? "");
   const [descricao, setDescricao] = useState(conquista?.descricao ?? "");
-  const [gatilho, setGatilho] = useState<GatilhoConquista>(conquista?.gatilho ?? "meta_diaria");
+  const [setor, setSetor] = useState<SetorPontuavel | null>(conquista?.setor ?? null);
+  const [metrica, setMetrica] = useState<Metrica>(conquista?.metrica ?? "agendados");
+  const [operador, setOperador] = useState<Operador>(conquista?.operador ?? "maior_igual");
+  const [valor, setValor] = useState(
+    conquista ? campoDaMetrica(conquista.metrica, conquista.valor) : "",
+  );
+  const [periodo, setPeriodo] = useState<PeriodoMeta>(conquista?.periodo ?? "diaria");
   const [pontos, setPontos] = useState(conquista ? String(conquista.pontos) : "");
-  const [criterio, setCriterio] = useState(conquista?.criterio ?? "");
+  const [repetivel, setRepetivel] = useState(conquista?.repetivel ?? true);
+  const [icone, setIcone] = useState<NomeIcone>((conquista?.icone as NomeIcone) ?? "medalha");
   const [ativa, setAtiva] = useState(conquista?.ativa ?? true);
   const [erros, setErros] = useState<Erros>({});
+  const [excluindo, setExcluindo] = useState(false);
+
+  const numero = valorDaMetrica(metrica, valor);
 
   async function salvar() {
     const e: Erros = {};
     if (!nome.trim()) e.nome = "Dê um nome à conquista.";
+    if (numero === null) e.valor = "Informe o valor da condição.";
     if (!(Number(pontos) > 0)) e.pontos = "Quantos pontos ela vale?";
     setErros(e);
-    if (Object.keys(e).length > 0) return;
+    if (Object.keys(e).length > 0 || numero === null) return;
 
     const salvo = await salvarConquista({
       id: conquista?.id,
       nome: nome.trim(),
       descricao: descricao.trim(),
-      gatilho,
-      icone: ROTULO_GATILHO[gatilho].icone,
+      icone,
+      metrica,
+      operador,
+      valor: numero,
+      periodo,
+      setor,
       pontos: Number(pontos),
-      repetivel: gatilho !== "marco",
-      criterio: criterio.trim() || ROTULO_GATILHO[gatilho].rotulo,
+      repetivel,
       ativa,
     });
     if (!salvo) return;
     toast.success(conquista ? "Conquista atualizada" : "Conquista criada", {
-      description: `${salvo.nome} vale ${salvo.pontos} pontos${salvo.repetivel ? " cada vez" : ""}.`,
+      description: `${salvo.nome} vale ${salvo.pontos} pontos${salvo.repetivel ? " a cada janela" : ", uma vez só"}.`,
     });
     aoFechar();
   }
 
   return (
     <Modal open onOpenChange={(v) => !v && aoFechar()}>
-      <ModalConteudo larguraMaxima="max-w-md">
+      <ModalConteudo larguraMaxima="max-w-lg">
         <ModalCabecalho
           titulo={conquista ? "Editar conquista" : "Nova conquista"}
-          descricao="Conquistas somam pontos, e os pontos sobem o colaborador de nível."
+          descricao="A conquista é conferida quando a janela fecha; os pontos entram no extrato."
         />
         <div className="flex flex-col gap-4">
           <Campo rotulo="Nome" obrigatorio erro={erros.nome}>
-            <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Plantão" autoFocus />
+            <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Dia cheio" autoFocus />
           </Campo>
+
+          <CampoSetor
+            valor={setor}
+            aoMudar={(novo) => {
+              setSetor(novo);
+              const permitidas = metricasDoSetor(novo).map((m) => m.chave);
+              if (!permitidas.includes(metrica)) {
+                setMetrica(permitidas[0] ?? "pontos");
+                setValor("");
+              }
+            }}
+          />
+
+          <CampoCondicao
+            setor={setor}
+            metrica={metrica}
+            operador={operador}
+            valor={valor}
+            erro={erros.valor}
+            aoMudar={(d) => {
+              setMetrica(d.metrica);
+              setOperador(d.operador);
+              setValor(d.valor);
+            }}
+          />
+
           <div className="grid gap-4 sm:grid-cols-[1fr_7rem]">
-            <Campo rotulo="Quando pontua">
-              <Selecao value={gatilho} onValueChange={(v) => setGatilho(v as GatilhoConquista)}>
-                <SelecaoGatilho>
-                  <SelecaoValor />
-                </SelecaoGatilho>
-                <SelecaoConteudo>
-                  {(Object.keys(ROTULO_GATILHO) as GatilhoConquista[]).map((g) => (
-                    <SelecaoItem key={g} value={g}>
-                      {ROTULO_GATILHO[g].rotulo}
-                    </SelecaoItem>
-                  ))}
-                </SelecaoConteudo>
-              </Selecao>
-            </Campo>
+            <CampoPeriodo valor={periodo} aoMudar={setPeriodo} />
             <Campo rotulo="Pontos" obrigatorio erro={erros.pontos}>
               <Input
                 value={pontos}
@@ -229,29 +512,40 @@ function FormularioConquista({
               />
             </Campo>
           </div>
-          <p className="-mt-2 text-xs text-muted-fg">
-            {gatilho === "marco"
-              ? "Marco único: pontua uma vez só por colaborador."
-              : "Pontua toda vez que acontece."}
-          </p>
-          <Campo rotulo="Critério" ajuda="Opcional. Como a equipe entende a regra.">
-            <Input
-              value={criterio}
-              onChange={(e) => setCriterio(e.target.value)}
-              placeholder="Atividade registrada em domingo ou feriado"
-            />
-          </Campo>
+
+          <div className="flex flex-col gap-2">
+            <Label>Ícone</Label>
+            <SeletorIcone valor={icone} aoMudar={setIcone} />
+          </div>
+
           <Campo rotulo="Descrição" ajuda="Opcional. Aparece para o colaborador.">
             <Textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} className="min-h-16" />
           </Campo>
+
+          <CampoAtivo
+            ativo={repetivel}
+            aoMudar={setRepetivel}
+            rotulo="Repetível"
+            descricao="Pontua uma vez por janela. Desligada, pontua uma vez na vida."
+          />
           <CampoAtivo
             ativo={ativa}
             aoMudar={setAtiva}
             rotulo="Conquista ativa"
             descricao="Inativa, deixa de pontuar. Os pontos já ganhos ficam."
           />
+          <p className="text-xs text-muted-fg">
+            Fica assim: {descreverCondicao(metrica, operador, numero ?? 0)},{" "}
+            {periodo === "diaria" ? "no dia" : periodo === "semanal" ? "na semana" : "no mês"}.
+          </p>
         </div>
         <ModalRodape>
+          {conquista && (
+            <Botao variante="fantasma" className="mr-auto" onClick={() => setExcluindo(true)}>
+              <Icone nome="excluir" size={15} />
+              Excluir
+            </Botao>
+          )}
           <Botao variante="secundaria" onClick={aoFechar}>
             Cancelar
           </Botao>
@@ -261,11 +555,23 @@ function FormularioConquista({
           </Botao>
         </ModalRodape>
       </ModalConteudo>
+
+      <ModalConfirmacao
+        aberto={excluindo}
+        titulo="Excluir conquista"
+        mensagem="Só dá para excluir conquista que ninguém ganhou. Se alguém já ganhou, desative."
+        perigo
+        icone="excluir"
+        rotuloConfirmar="Excluir"
+        aoCancelar={() => setExcluindo(false)}
+        aoConfirmar={async () => {
+          if (conquista && (await excluirConquista(conquista.id))) {
+            toast.success("Conquista excluída");
+            aoFechar();
+          }
+          setExcluindo(false);
+        }}
+      />
     </Modal>
   );
-}
-
-/** `R$ 800,00` ou `Sem bônus`. */
-export function rotuloBonus(valor: number): string {
-  return valor > 0 ? formatBRL(valor) : "Sem bônus";
 }

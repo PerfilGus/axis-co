@@ -7,17 +7,24 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   serial,
   text,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { iso } from "@/lib/iso";
 import type {
+  AdicionalPontos,
   BonusNivel,
+  CondicaoRecompensa,
+  EventoPontos,
+  FaixaValorPontos,
+  Metrica,
+  Operador,
   Cobranca,
   CustosPedido,
   Endereco,
-  FaixaMeta,
   FranquiaBoleto,
   ItemKit,
   ItemPedido,
@@ -171,6 +178,11 @@ export const atividades = pgTable(
     entidade: text().notNull(),
     entidadeId: text(),
     ocorridoEm: dataISO().notNull(),
+    /**
+     * Quando a linha foi gravada. `ocorridoEm` pode ser retroativo (pagamento
+     * na data informada); notificações ordenam e contam leitura por aqui.
+     */
+    registradoEm: dataISO().notNull().default(sql`now()`),
     titulo: text(),
     descricao: text(),
     antes: jsonb(),
@@ -184,7 +196,66 @@ export const atividades = pgTable(
     index().on(t.entidade, t.entidadeId, t.ocorridoEm),
     index().on(t.usuarioId, t.ocorridoEm),
     index().on(t.ocorridoEm),
+    index().on(t.registradoEm),
   ],
+);
+
+/* ================================================================
+   Notificações — geradas da tabela de atividades
+   ================================================================ */
+
+/** Notificação lida uma a uma. */
+export const notificacoesLidas = pgTable(
+  "notificacoes_lidas",
+  {
+    usuarioId: text()
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    atividadeId: text().notNull(),
+    lidaEm: dataISO().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.usuarioId, t.atividadeId] })],
+);
+
+/** "Marcar todas": tudo registrado até `lidasAte` conta como lido. */
+export const notificacoesEstado = pgTable("notificacoes_estado", {
+  usuarioId: text()
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  lidasAte: dataISO().notNull(),
+});
+
+/** Escolha de cada usuário por tipo. Sem linha, vale o padrão do catálogo. */
+export const preferenciasNotificacao = pgTable(
+  "preferencias_notificacao",
+  {
+    usuarioId: text()
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    tipo: text().notNull(),
+    noApp: boolean().notNull(),
+    push: boolean().notNull(),
+    atualizadoEm: dataISO().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.usuarioId, t.tipo] })],
+);
+
+/** Aparelhos que aceitaram Web Push. Um usuário pode ter vários. */
+export const inscricoesPush = pgTable(
+  "inscricoes_push",
+  {
+    id: text().primaryKey(),
+    usuarioId: text()
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    endpoint: text().notNull().unique(),
+    p256dh: text().notNull(),
+    auth: text().notNull(),
+    userAgent: text(),
+    criadaEm: dataISO().notNull(),
+    ultimoEnvioEm: dataISO(),
+  },
+  (t) => [index().on(t.usuarioId)],
 );
 
 /* ================================================================
@@ -215,15 +286,19 @@ export const colaboradores = pgTable("colaboradores", {
   frustradoBps: integer(),
 });
 
+type SetorPontuavel = "vendas" | "financeiro";
+type PeriodoMeta = "diaria" | "semanal" | "mensal";
+
 export const metas = pgTable("metas", {
   id: text().primaryKey(),
-  colaboradorId: text()
-    .notNull()
-    .references(() => colaboradores.id),
+  colaboradorId: text().references(() => colaboradores.id),
   nome: text().notNull(),
-  tipo: text().$type<"pedidos" | "faturamento">().notNull(),
-  periodo: text().$type<"diaria" | "semanal" | "mensal">().notNull(),
-  faixas: jsonb().$type<FaixaMeta[]>().notNull(),
+  metrica: text().$type<Metrica>().notNull(),
+  alvo: integer().notNull(),
+  periodo: text().$type<PeriodoMeta>().notNull(),
+  setor: text().$type<SetorPontuavel>(),
+  vigenteDesde: date({ mode: "string" }).notNull(),
+  vigenteAte: date({ mode: "string" }),
   ativa: boolean().notNull().default(true),
 });
 
@@ -234,6 +309,8 @@ export const niveis = pgTable("niveis", {
   pontosNecessarios: integer().notNull(),
   bonus: integer().notNull().default(0),
   icone: text().notNull(),
+  cor: text(),
+  beneficio: text().notNull().default(""),
 });
 
 export const conquistas = pgTable("conquistas", {
@@ -242,18 +319,12 @@ export const conquistas = pgTable("conquistas", {
   descricao: text().notNull(),
   icone: text().notNull(),
   pontos: integer().notNull(),
-  gatilho: text()
-    .$type<
-      | "meta_diaria"
-      | "meta_semanal"
-      | "meta_mensal"
-      | "domingo_feriado"
-      | "dias_trabalhados"
-      | "marco"
-    >()
-    .notNull(),
+  metrica: text().$type<Metrica>().notNull(),
+  operador: text().$type<Operador>().notNull(),
+  valor: integer().notNull(),
+  periodo: text().$type<PeriodoMeta>().notNull(),
+  setor: text().$type<SetorPontuavel>(),
   repetivel: boolean().notNull().default(false),
-  criterio: text().notNull(),
   ativa: boolean().notNull().default(true),
 });
 
@@ -267,9 +338,11 @@ export const conquistasDesbloqueadas = pgTable(
     colaboradorId: text()
       .notNull()
       .references(() => colaboradores.id),
+    janela: text().notNull().default("unica"),
+    pontos: integer().notNull().default(0),
     desbloqueadaEm: dataISO().notNull(),
   },
-  (t) => [index().on(t.colaboradorId)],
+  (t) => [index().on(t.colaboradorId), uniqueIndex().on(t.conquistaId, t.colaboradorId, t.janela)],
 );
 
 export const bonusNivel = pgTable("bonus_nivel", {
@@ -285,6 +358,92 @@ export const bonusNivel = pgTable("bonus_nivel", {
   status: text().$type<BonusNivel["status"]>().notNull(),
   pagoEm: dataISO(),
 });
+
+/* ================================================================
+   Pontos e recompensas
+   ================================================================ */
+
+/** Versões da regra de pontuação por setor. Uma por dia de vigência. */
+export const regrasPontuacao = pgTable(
+  "regras_pontuacao",
+  {
+    id: text().primaryKey(),
+    setor: text().$type<SetorPontuavel>().notNull(),
+    vigenteDesde: date({ mode: "string" }).notNull(),
+    pontosFixos: integer().notNull(),
+    adicional: text().$type<AdicionalPontos>().notNull(),
+    faixasValor: jsonb().$type<FaixaValorPontos[]>().notNull(),
+    pontosPorKit: jsonb().$type<Array<{ kitId: string; pontos: number }>>().notNull(),
+    penalidadeBps: integer().notNull(),
+    quedaNivelBps: integer().notNull(),
+    criadoPor: text(),
+    criadoEm: dataISO().notNull(),
+  },
+  (t) => [uniqueIndex().on(t.setor, t.vigenteDesde)],
+);
+
+/**
+ * Extrato de pontos. Só recebe inserções: toda correção é um lançamento de
+ * sinal contrário. O saldo em `colaboradores.pontos` é a soma desta tabela.
+ */
+export const lancamentosPontos = pgTable(
+  "lancamentos_pontos",
+  {
+    id: text().primaryKey(),
+    colaboradorId: text()
+      .notNull()
+      .references(() => colaboradores.id),
+    setor: text().$type<SetorPontuavel>().notNull(),
+    pedidoId: text(),
+    pedidoCodigo: text(),
+    evento: text().$type<EventoPontos>().notNull(),
+    pontos: integer().notNull(),
+    descricao: text().notNull(),
+    regraId: text(),
+    /** A atividade que causou o lançamento (mudança de status, conquista). */
+    atividadeId: text(),
+    ocorridoEm: dataISO().notNull(),
+  },
+  (t) => [index().on(t.colaboradorId, t.ocorridoEm), index().on(t.pedidoId), index().on(t.ocorridoEm)],
+);
+
+export const recompensas = pgTable("recompensas", {
+  id: text().primaryKey(),
+  nome: text().notNull(),
+  valor: integer().notNull(),
+  condicao: jsonb().$type<CondicaoRecompensa>().notNull(),
+  periodo: text().$type<PeriodoMeta>().notNull(),
+  setor: text().$type<SetorPontuavel>(),
+  colaboradorId: text().references(() => colaboradores.id),
+  vigenteDesde: date({ mode: "string" }).notNull(),
+  vigenteAte: date({ mode: "string" }),
+  ativa: boolean().notNull().default(true),
+});
+
+export const recompensasLiberadas = pgTable(
+  "recompensas_liberadas",
+  {
+    id: text().primaryKey(),
+    recompensaId: text()
+      .notNull()
+      .references(() => recompensas.id),
+    colaboradorId: text()
+      .notNull()
+      .references(() => colaboradores.id),
+    janela: text().notNull(),
+    janelaFim: date({ mode: "string" }).notNull(),
+    /** Congelados na liberação: editar a recompensa depois não muda o que foi ganho. */
+    nome: text().notNull(),
+    valor: integer().notNull(),
+    liberadaEm: dataISO().notNull(),
+    status: text().$type<"liberado" | "pago">().notNull(),
+    pagoEm: dataISO(),
+  },
+  (t) => [
+    uniqueIndex().on(t.recompensaId, t.colaboradorId, t.janela),
+    index().on(t.colaboradorId, t.janelaFim),
+  ],
+);
 
 export const pagamentosColaborador = pgTable(
   "pagamentos_colaborador",
@@ -304,6 +463,7 @@ export const pagamentosColaborador = pgTable(
     pagoEm: dataISO(),
     detalhamento: jsonb().$type<LinhaDetalhe[]>().notNull(),
     bonusNivelIds: jsonb().$type<string[]>().notNull(),
+    recompensaIds: jsonb().$type<string[]>().notNull().default([]),
   },
   (t) => [uniqueIndex().on(t.colaboradorId, t.competencia)],
 );

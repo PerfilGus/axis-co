@@ -50,28 +50,29 @@ export function solicitacoesPendentes(
     );
 }
 
-function CartaoSolicitacao({
-  pedido,
-  ajuste,
-  aoAbrirPedido,
-}: Solicitacao & { aoAbrirPedido: (pedido: Pedido) => void }) {
+/**
+ * Aprovar ou recusar uma solicitação. A fila e o sino decidem pelo mesmo
+ * caminho: aprovar exclusão também apaga o pedido.
+ */
+export function useDecidirSolicitacao() {
   const { decidirAjuste, excluir } = usePedidos();
-  const { nomeDe: nomeColaborador } = useEquipe();
-  const [observacao, setObservacao] = useState("");
-  const tipo = ROTULO_TIPO[ajuste.tipo];
-  const mexeNoValor = ajuste.tipo === "desconto" || ajuste.tipo === "acrescimo";
-
-  async function decidir(decisao: "aprovado" | "recusado") {
-    if (!(await decidirAjuste(pedido.id, ajuste.id, decisao, observacao.trim() || null))) return;
+  return async (
+    pedido: Pedido,
+    ajuste: AjusteValor,
+    decisao: "aprovado" | "recusado",
+    observacao: string | null,
+  ): Promise<boolean> => {
+    if (!(await decidirAjuste(pedido.id, ajuste.id, decisao, observacao))) return false;
 
     if (decisao === "aprovado" && ajuste.tipo === "exclusao") {
-      if (!(await excluir(pedido.id))) return;
+      if (!(await excluir(pedido.id))) return false;
       toast.success(`Pedido ${pedido.codigo} excluído`, {
         description: "A exclusão foi aprovada e o pedido saiu da lista.",
       });
-      return;
+      return true;
     }
 
+    const mexeNoValor = ajuste.tipo === "desconto" || ajuste.tipo === "acrescimo";
     toast.success(
       decisao === "aprovado" ? "Solicitação aprovada" : "Solicitação recusada",
       {
@@ -80,6 +81,23 @@ function CartaoSolicitacao({
           : `${pedido.codigo} foi atualizado.`,
       },
     );
+    return true;
+  };
+}
+
+function CartaoSolicitacao({
+  pedido,
+  ajuste,
+  aoAbrirPedido,
+}: Solicitacao & { aoAbrirPedido: (pedido: Pedido) => void }) {
+  const decidirSolicitacao = useDecidirSolicitacao();
+  const { nomeDe: nomeColaborador } = useEquipe();
+  const [observacao, setObservacao] = useState("");
+  const tipo = ROTULO_TIPO[ajuste.tipo];
+  const mexeNoValor = ajuste.tipo === "desconto" || ajuste.tipo === "acrescimo";
+
+  function decidir(decisao: "aprovado" | "recusado") {
+    return decidirSolicitacao(pedido, ajuste, decisao, observacao.trim() || null);
   }
 
   return (

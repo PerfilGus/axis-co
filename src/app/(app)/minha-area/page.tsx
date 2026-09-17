@@ -12,26 +12,35 @@ import {
   diasComAtividade,
   taxaRecebimento,
 } from "@/lib/desempenho";
-import { filaCobranca, noEscopo } from "@/lib/filas";
+import { metasDoColaborador } from "@/lib/metas";
+import { conquistasNaJanela } from "@/lib/recompensas";
+import { semanaDoColaborador, sequenciaDeDias } from "@/lib/minha-area";
+import type { FontesMetricas } from "@/lib/metricas";
 import {
-  metasDoColaborador,
-  proximasConquistas,
-  semanaDoColaborador,
-  sequenciaDeDias,
-} from "@/lib/minha-area";
-import { competenciaAtual, intervaloDoRanking } from "@/lib/periodos";
+  competenciaAtual,
+  intervaloDoRanking,
+  janelaCorrente,
+  type Janela,
+} from "@/lib/periodos";
 import { classificarEquipe } from "@/lib/ranking";
 import { useEquipe } from "@/lib/providers/equipe";
 import { progressoNivel } from "@/lib/dominio/equipe";
 import { usePedidos } from "@/lib/providers/pedidos";
 import { useSessao } from "@/lib/providers/sessao";
 import { Botao } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { AvatarAnel } from "@/components/shared/avatar-anel";
 import { EstadoVazio } from "@/components/shared/estado-vazio";
-import { TopoMinhaArea, type Aviso } from "@/components/minha-area/topo";
+import { ExtratoPontos } from "@/components/shared/extrato-pontos";
+import { TopoMinhaArea } from "@/components/minha-area/topo";
 import { SemanaTrabalho } from "@/components/minha-area/semana";
 import { MetaDoPeriodo } from "@/components/minha-area/meta-periodo";
-import { CardConquistas, CardEquipe, CardNivel } from "@/components/minha-area/cartoes";
+import {
+  CardConquistas,
+  CardEquipe,
+  CardNivel,
+  CardRecompensas,
+} from "@/components/minha-area/cartoes";
 
 function Indicadores({ itens }: { itens: Array<{ valor: string; rotulo: string; dica?: string }> }) {
   return (
@@ -54,7 +63,7 @@ function Indicadores({ itens }: { itens: Array<{ valor: string; rotulo: string; 
 }
 
 export default function PaginaMinhaArea() {
-  const { usuario, perfil, escopoVendedores } = useSessao();
+  const { usuario, perfil } = useSessao();
   const { pedidos } = usePedidos();
   const {
     colaboradores,
@@ -62,6 +71,9 @@ export default function PaginaMinhaArea() {
     niveis,
     conquistas,
     desbloqueadas,
+    recompensas,
+    recompensasLiberadas,
+    lancamentos,
     bonusNivel,
     pagamentos,
   } = useEquipe();
@@ -70,14 +82,15 @@ export default function PaginaMinhaArea() {
 
   const dados = useMemo(() => {
     const mes = intervaloDoRanking("mes");
-    const atividade = diasComAtividade(usuario, pedidos);
     const competencia = competenciaAtual();
-    const minhasMetas = metasDoColaborador(metas, usuario.id);
+    const atividade = diasComAtividade(usuario, pedidos);
+    const fontes: FontesMetricas = { pedidos, lancamentos, metas };
+    const minhasMetas = metasDoColaborador(metas, usuario);
     const fechamento = comissionavel(usuario)
       ? (fechamentosDaCompetencia(competencia, [usuario], pagamentos, pedidos, {
-          metas,
           niveis,
           bonusNivel,
+          recompensasLiberadas,
         })[0] ?? null)
       : null;
 
@@ -85,20 +98,55 @@ export default function PaginaMinhaArea() {
       ? taxaRecebimento(carteiraDe(usuario, pedidos), mes)
       : desempenhoNo(usuario, pedidos, mes).frustracao;
 
+    // As conquistas ao alcance: as das três janelas, as mais curtas primeiro.
+    const janelas: Janela[] = [
+      janelaCorrente("diaria"),
+      janelaCorrente("semanal"),
+      janelaCorrente("mensal"),
+    ];
+    const etapas = janelas
+      .flatMap((janela) => conquistasNaJanela(usuario, conquistas, desbloqueadas, janela, fontes))
+      .sort((a, b) => Number(b.feita) - Number(a.feita));
+
     return {
+      fontes,
       atividade,
       minhasMetas,
       fechamento,
       taxa,
       diasNoMes: [...atividade].filter((d) => d.startsWith(competencia)).length,
-      semana: semanaDoColaborador(usuario, pedidos, metas, atividade),
+      semana: semanaDoColaborador(usuario, metas, fontes, atividade),
       sequencia: sequenciaDeDias(atividade),
-      etapas: proximasConquistas(usuario, conquistas, desbloqueadas, metas, pedidos, atividade),
-      posicoes: ehCobrador || usuario.setor === "vendas"
-        ? classificarEquipe(colaboradores, niveis, pedidos, mes, ehCobrador ? "financeiro" : "vendas")
-        : [],
+      etapas,
+      premiosDoMes: recompensasLiberadas.filter(
+        (l) => l.colaboradorId === usuario.id && l.janelaFim.slice(0, 7) === competencia,
+      ),
+      posicoes:
+        ehCobrador || usuario.setor === "vendas"
+          ? classificarEquipe(
+              colaboradores,
+              niveis,
+              pedidos,
+              mes,
+              ehCobrador ? "financeiro" : "vendas",
+              lancamentos,
+            )
+          : [],
     };
-  }, [usuario, pedidos, metas, niveis, conquistas, desbloqueadas, bonusNivel, pagamentos, colaboradores, ehCobrador]);
+  }, [
+    usuario,
+    pedidos,
+    metas,
+    niveis,
+    conquistas,
+    desbloqueadas,
+    recompensasLiberadas,
+    lancamentos,
+    bonusNivel,
+    pagamentos,
+    colaboradores,
+    ehCobrador,
+  ]);
 
   if (usuario.setor === "administracao") {
     return (
@@ -120,44 +168,11 @@ export default function PaginaMinhaArea() {
     (b) => b.colaboradorId === usuario.id && b.status === "liberado",
   );
 
-  const avisos: Aviso[] = [];
-  if (ehCobrador) {
-    const fila = filaCobranca(pedidos, escopoVendedores).length;
-    if (fila > 0) {
-      avisos.push({
-        chave: "cobranca",
-        icone: "cobranca",
-        texto: `${fila} ${fila === 1 ? "pedido esperando" : "pedidos esperando"} cobrança`,
-        href: "/operacao/cobranca",
-      });
-    }
-  } else {
-    const ajustes = noEscopo(pedidos, escopoVendedores)
-      .flatMap((p) => p.ajustes)
-      .filter((a) => a.status === "pendente" && a.solicitadoPor === usuario.id).length;
-    if (ajustes > 0) {
-      avisos.push({
-        chave: "ajustes",
-        icone: "relogio",
-        texto: `${ajustes} ${ajustes === 1 ? "pedido de ajuste esperando" : "pedidos de ajuste esperando"} o Admin`,
-        href: "/operacao/pedidos",
-      });
-    }
-  }
-  for (const b of bonusPendente) {
-    avisos.push({
-      chave: b.id,
-      icone: "pix",
-      texto: `Bônus de ${niveis.find((n) => n.id === b.nivelId)?.nome ?? "nível"} liberado, aguardando o Pix`,
-    });
-  }
-
   const usuarioArroba = `@${usuario.email.split("@")[0]}`;
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-6 lg:max-w-5xl">
       <TopoMinhaArea
-        avisos={avisos}
         hrefAjustes={CONFIG_POR_PERFIL[perfil][0].href}
         fechamento={dados.fechamento}
       />
@@ -201,7 +216,18 @@ export default function PaginaMinhaArea() {
 
           <SemanaTrabalho dias={dados.semana} />
 
-          <MetaDoPeriodo colaborador={usuario} metas={dados.minhasMetas} pedidos={pedidos} />
+          <MetaDoPeriodo
+            colaborador={usuario}
+            metas={dados.minhasMetas}
+            recompensas={recompensas}
+            liberadas={recompensasLiberadas}
+            fontes={dados.fontes}
+          />
+
+          <Card className="flex flex-col gap-4 p-5">
+            <h2 className="text-base font-medium tracking-tight">Extrato de pontos</h2>
+            <ExtratoPontos colaboradorId={usuario.id} />
+          </Card>
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
@@ -211,6 +237,7 @@ export default function PaginaMinhaArea() {
             criterio={ehCobrador ? "pagos" : "agendados"}
           />
           <CardConquistas etapas={dados.etapas} sequencia={dados.sequencia} />
+          <CardRecompensas liberadas={dados.premiosDoMes} />
           <CardNivel
             colaborador={usuario}
             atual={nivel.atual}

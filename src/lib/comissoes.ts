@@ -3,17 +3,16 @@ import type {
   Centavos,
   Colaborador,
   LinhaDetalhe,
-  Meta,
   Nivel,
   PagamentoColaborador,
   Pedido,
+  RecompensaLiberada,
 } from "@/lib/types";
-import { ROTULO_PERIODO_META } from "@/lib/types";
-import { formatBps, formatBRL, formatData, formatDataCurta } from "@/lib/format";
+import { formatBps, formatBRL, formatData } from "@/lib/format";
 import {
   competenciaDe,
   intervaloDaCompetencia,
-  janelasNaCompetencia,
+  rotuloDaJanela,
   type Intervalo,
 } from "@/lib/periodos";
 import {
@@ -23,7 +22,6 @@ import {
   pagosNo,
   valorRecebido,
 } from "@/lib/desempenho";
-import { descreverRecompensa, formatarAlvo, medirMeta } from "@/lib/metas";
 import { iso } from "@/lib/iso";
 
 /**
@@ -75,10 +73,10 @@ export function dataDePagamento(colaborador: Colaborador, competencia: string): 
   return iso(new Date(Date.UTC(ano, mes, dia, 15, 0, 0)));
 }
 
-interface ContextoFechamento {
-  metas: Meta[];
+export interface ContextoFechamento {
   niveis: Nivel[];
   bonusNivel: BonusNivel[];
+  recompensasLiberadas: RecompensaLiberada[];
 }
 
 /**
@@ -89,7 +87,7 @@ export function calcularFechamento(
   colaborador: Colaborador,
   competencia: string,
   pedidos: Pedido[],
-  { metas, niveis, bonusNivel }: ContextoFechamento,
+  { niveis, bonusNivel, recompensasLiberadas }: ContextoFechamento,
 ): PagamentoColaborador {
   const carteira = carteiraDe(colaborador, pedidos);
   const mes = intervaloDaCompetencia(competencia);
@@ -125,34 +123,20 @@ export function calcularFechamento(
         },
   );
 
-  /* --- bônus de meta: cada janela da competência, faixa mais alta --- */
+  /* --- recompensas liberadas nas janelas que terminaram na competência --- */
   let bonusMeta = 0;
-  for (const meta of metas.filter((m) => m.colaboradorId === colaborador.id && m.ativa)) {
-    for (const janela of janelasNaCompetencia(meta.periodo, competencia)) {
-      const { atingida, atual } = medirMeta(meta, colaborador, pedidos, janela);
-      if (!atingida) continue;
-      const quando =
-        meta.periodo === "mensal"
-          ? "no mês"
-          : meta.periodo === "semanal"
-            ? `semana de ${formatDataCurta(iso(janela.inicio))}`
-            : formatData(iso(janela.inicio));
-      let valor = atingida.valor;
-      let conta = `${formatarAlvo(meta.tipo, atual)} de ${formatarAlvo(meta.tipo, atingida.alvo)} · ${descreverRecompensa(atingida)}`;
-      if (atingida.recompensa === "percentual") {
-        const baseJanela = baseDaComissao(colaborador, carteira, janela).base;
-        valor = Math.round((baseJanela * atingida.valor) / 10_000);
-        conta = `${conta} · ${formatBRL(baseJanela)} × ${formatBps(atingida.valor)}`;
-      }
-      if (valor <= 0) continue;
-      bonusMeta += valor;
-      linhas.push({
-        grupo: "bonus_meta",
-        rotulo: `${meta.nome} (${ROTULO_PERIODO_META[meta.periodo].toLowerCase()}, ${quando})`,
-        conta,
-        valor,
-      });
-    }
+  const recompensaIds: string[] = [];
+  for (const liberada of recompensasLiberadas.filter(
+    (r) => r.colaboradorId === colaborador.id && r.janelaFim.slice(0, 7) === competencia,
+  )) {
+    bonusMeta += liberada.valor;
+    recompensaIds.push(liberada.id);
+    linhas.push({
+      grupo: "bonus_meta",
+      rotulo: liberada.nome,
+      conta: `Liberada na ${rotuloDaJanela(liberada.janela)}`,
+      valor: liberada.valor,
+    });
   }
 
   /* --- bônus de nível liberado na competência --- */
@@ -194,6 +178,7 @@ export function calcularFechamento(
     pagoEm: null,
     detalhamento: linhas,
     bonusNivelIds,
+    recompensaIds,
   };
 }
 

@@ -172,6 +172,13 @@ export const GRUPOS_POR_PERFIL: Record<Perfil, GrupoNav[]> = {
   cobrador: GRUPOS_COBRADOR,
 };
 
+const NOTIFICACOES: ItemNav = {
+  rotulo: "Notificações",
+  href: "/configuracoes/notificacoes",
+  icone: "notificacoes",
+  descricao: "O que avisa no sino e no celular.",
+};
+
 const CONFIG_ADMIN: ItemNav[] = [
   {
     rotulo: "Produtos e kits",
@@ -192,11 +199,12 @@ const CONFIG_ADMIN: ItemNav[] = [
     descricao: "Cadastro dos criativos e das linhas que os atendem.",
   },
   {
-    rotulo: "Metas, níveis e conquistas",
+    rotulo: "Pontos e metas",
     href: "/configuracoes/metas",
     icone: "metas",
-    descricao: "Alvos por setor, trilha de níveis e conquistas.",
+    descricao: "Pontuação por pedido, níveis, metas, conquistas e recompensas.",
   },
+  NOTIFICACOES,
   {
     rotulo: "Aparência",
     href: "/configuracoes/aparencia",
@@ -216,8 +224,8 @@ const SEGURANCA: ItemNav = {
 
 export const CONFIG_POR_PERFIL: Record<Perfil, ItemNav[]> = {
   admin: [...CONFIG_ADMIN, SEGURANCA],
-  vendedor: [APARENCIA, SEGURANCA],
-  cobrador: [APARENCIA, SEGURANCA],
+  vendedor: [APARENCIA, NOTIFICACOES, SEGURANCA],
+  cobrador: [APARENCIA, NOTIFICACOES, SEGURANCA],
 };
 
 export const GRUPO_CONFIG: GrupoNav = {

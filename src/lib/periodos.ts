@@ -234,3 +234,78 @@ export function periodoDoPreset(preset: PresetPeriodo, referencia = new Date()):
       return { preset, de: somarDias(dia, -29), ate: dia };
   }
 }
+
+/* ----------------------------------------------------------------
+   Janelas nomeadas: metas, conquistas e recompensas.
+
+   A chave identifica a janela no banco (`2026-09-17`, `S-2026-09-15`,
+   `2026-09`), para a mesma conquista nunca pontuar duas vezes na mesma janela.
+   ---------------------------------------------------------------- */
+
+export interface Janela {
+  chave: string;
+  periodo: PeriodoMeta;
+  /** Primeiro e último dia, inclusive. */
+  de: string;
+  ate: string;
+  intervalo: Intervalo;
+}
+
+function montarJanela(periodo: PeriodoMeta, de: string, ate: string, referencia: Date): Janela {
+  const chave = periodo === "diaria" ? de : periodo === "semanal" ? `S-${de}` : de.slice(0, 7);
+  return { chave, periodo, de, ate, intervalo: intervaloDeDias(de, ate, referencia) };
+}
+
+/** A janela que está correndo agora. */
+export function janelaCorrente(periodo: PeriodoMeta, referencia = new Date()): Janela {
+  const dia = hoje(referencia);
+  if (periodo === "diaria") return montarJanela(periodo, dia, dia, referencia);
+  if (periodo === "semanal") {
+    const de = diaDe(inicioDaSemanaBR(referencia));
+    return montarJanela(periodo, de, somarDias(de, 6), referencia);
+  }
+  const { de, ate } = diasDaCompetencia(dia.slice(0, 7));
+  return montarJanela(periodo, de, ate, referencia);
+}
+
+/** As `quantidade` últimas janelas já encerradas, da mais recente para a mais antiga. */
+export function janelasFechadas(
+  periodo: PeriodoMeta,
+  quantidade: number,
+  referencia = new Date(),
+): Janela[] {
+  const atual = janelaCorrente(periodo, referencia);
+  return Array.from({ length: quantidade }, (_, i) => {
+    if (periodo === "diaria") {
+      const dia = somarDias(atual.de, -(i + 1));
+      return montarJanela(periodo, dia, dia, referencia);
+    }
+    if (periodo === "semanal") {
+      const de = somarDias(atual.de, -7 * (i + 1));
+      return montarJanela(periodo, de, somarDias(de, 6), referencia);
+    }
+    const { de, ate } = diasDaCompetencia(competenciaAnterior(atual.de.slice(0, 7), i + 1));
+    return montarJanela(periodo, de, ate, referencia);
+  });
+}
+
+/** Vale na janela: a vigência cruza os dias dela. */
+export function vigenteNaJanela(
+  item: { vigenteDesde: string; vigenteAte: string | null },
+  janela: Pick<Janela, "de" | "ate">,
+): boolean {
+  return item.vigenteDesde <= janela.ate && (item.vigenteAte === null || item.vigenteAte >= janela.de);
+}
+
+/** `17/09`, `semana de 15/09` ou `setembro de 2026`. */
+export function rotuloDaJanela(chave: string): string {
+  const curto = (dia: string) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
+  if (chave.startsWith("S-")) return `semana de ${curto(chave.slice(2))}`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(chave)) return curto(chave);
+  if (/^\d{4}-\d{2}$/.test(chave)) {
+    const [ano, mes] = chave.split("-").map(Number);
+    const nome = new Date(Date.UTC(ano, mes - 1, 15)).toLocaleDateString("pt-BR", { month: "long", timeZone: "UTC" });
+    return `${nome} de ${ano}`;
+  }
+  return "registro manual";
+}

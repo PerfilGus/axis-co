@@ -1,20 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import type { FaixaMeta, Meta, PeriodoMeta, TipoMeta, TipoRecompensa } from "@/lib/types";
-import { ROTULO_PERIODO_META } from "@/lib/types";
-import {
-  bpsParaCampo,
-  centavosParaCampo,
-  parseBRL,
-  parsePercentual,
-} from "@/lib/format";
-import { baseDaMeta, descreverRecompensa, formatarAlvo } from "@/lib/metas";
+import type { Meta, Metrica, Operador, PeriodoMeta, SetorPontuavel } from "@/lib/types";
+import { hoje } from "@/lib/periodos";
+import { descreverCondicao, DEFINICAO_METRICA } from "@/lib/metricas";
 import { useEquipe } from "@/lib/providers/equipe";
 import { Icone } from "@/components/icone";
 import { Botao } from "@/components/ui/button";
 import { Modal, ModalCabecalho, ModalConteudo, ModalRodape } from "@/components/ui/dialog";
-import { Campo, Label } from "@/components/ui/label";
+import { Campo } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
   Selecao,
@@ -24,34 +18,19 @@ import {
   SelecaoValor,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
-import { ControleSegmentado } from "@/components/shared/controles";
+import { ModalConfirmacao } from "@/components/shared/modal-confirmacao";
 import { CampoAtivo } from "@/components/config/modais-catalogo";
-
-interface FaixaEditavel {
-  id: string;
-  alvo: string;
-  recompensa: TipoRecompensa;
-  valor: string;
-}
-
-let sequenciaFaixa = 0;
-function novaFaixa(): FaixaEditavel {
-  sequenciaFaixa += 1;
-  return { id: `fx_nova_${sequenciaFaixa}`, alvo: "", recompensa: "bonus", valor: "" };
-}
-
-function paraEditavel(faixa: FaixaMeta, tipo: TipoMeta): FaixaEditavel {
-  return {
-    id: faixa.id,
-    alvo: tipo === "faturamento" ? centavosParaCampo(faixa.alvo) : String(faixa.alvo),
-    recompensa: faixa.recompensa,
-    valor: faixa.recompensa === "bonus" ? centavosParaCampo(faixa.valor) : bpsParaCampo(faixa.valor),
-  };
-}
+import {
+  campoDaMetrica,
+  CampoCondicao,
+  CampoPeriodo,
+  valorDaMetrica,
+} from "@/components/config/modais-premiacao";
 
 /**
- * Meta de um colaborador. O que conta é fixo pelo setor; aqui se escolhe se
- * mede quantidade ou valor, o período e as faixas de recompensa.
+ * Meta: uma métrica, um alvo e uma janela, para um setor inteiro ou para uma
+ * pessoa. A vigência decide de quando em diante ela vale — mudar a meta não
+ * mexe no que já passou.
  */
 export function ModalMeta({
   meta,
@@ -60,14 +39,14 @@ export function ModalMeta({
   aoFechar,
 }: {
   meta: Meta | null;
-  /** Obrigatório para meta nova; sem ele, o formulário pede o colaborador. */
+  /** Pré-seleciona a pessoa quando a meta nasce na gaveta do colaborador. */
   colaboradorId: string | null;
   aberto: boolean;
   aoFechar: () => void;
 }) {
   if (!aberto) return null;
   return (
-    <FormularioMeta
+    <Formulario
       key={meta?.id ?? `nova-${colaboradorId}`}
       meta={meta}
       colaboradorFixo={meta?.colaboradorId ?? colaboradorId}
@@ -76,7 +55,7 @@ export function ModalMeta({
   );
 }
 
-function FormularioMeta({
+function Formulario({
   meta,
   colaboradorFixo,
   aoFechar,
@@ -86,236 +65,191 @@ function FormularioMeta({
   aoFechar: () => void;
 }) {
   const { colaboradores, salvarMeta, excluirMeta } = useEquipe();
-  const elegiveis = colaboradores.filter((c) => c.setor !== "administracao" && c.ativo);
-  const [colaboradorId, setColaboradorId] = useState(colaboradorFixo ?? "");
-  const [nome, setNome] = useState(meta?.nome ?? "");
-  const [tipo, setTipo] = useState<TipoMeta>(meta?.tipo ?? "pedidos");
-  const [periodo, setPeriodo] = useState<PeriodoMeta>(meta?.periodo ?? "mensal");
-  const [faixas, setFaixas] = useState<FaixaEditavel[]>(
-    meta ? meta.faixas.map((f) => paraEditavel(f, meta.tipo)) : [novaFaixa()],
+  const pessoas = colaboradores.filter((c) => c.ativo && c.setor !== "administracao");
+  const doColaborador = pessoas.find((c) => c.id === colaboradorFixo) ?? null;
+
+  const [alvoDe, setAlvoDe] = useState<"setor" | "pessoa">(
+    meta?.colaboradorId || colaboradorFixo ? "pessoa" : "setor",
   );
+  const [colaboradorId, setColaboradorId] = useState(meta?.colaboradorId ?? colaboradorFixo ?? "");
+  const [setor, setSetor] = useState<SetorPontuavel | null>(
+    meta?.setor ?? ((doColaborador?.setor as SetorPontuavel | undefined) ?? "vendas"),
+  );
+  const [nome, setNome] = useState(meta?.nome ?? "");
+  const [metrica, setMetrica] = useState<Metrica>(meta?.metrica ?? "agendados");
+  const [operador, setOperador] = useState<Operador>(
+    meta ? DEFINICAO_METRICA[meta.metrica].sentido : "maior_igual",
+  );
+  const [valor, setValor] = useState(meta ? campoDaMetrica(meta.metrica, meta.alvo) : "");
+  const [periodo, setPeriodo] = useState<PeriodoMeta>(meta?.periodo ?? "diaria");
+  const [vigenteDesde, setVigenteDesde] = useState(meta?.vigenteDesde ?? hoje());
+  const [vigenteAte, setVigenteAte] = useState(meta?.vigenteAte ?? "");
   const [ativa, setAtiva] = useState(meta?.ativa ?? true);
   const [erros, setErros] = useState<Record<string, string>>({});
+  const [excluindo, setExcluindo] = useState(false);
 
-  const colaborador = colaboradores.find((c) => c.id === colaboradorId) ?? null;
-
-  function mudarFaixa(id: string, parcial: Partial<FaixaEditavel>) {
-    setFaixas((atual) => atual.map((f) => (f.id === id ? { ...f, ...parcial } : f)));
-  }
-
-  function converter(): FaixaMeta[] | null {
-    const convertidas: FaixaMeta[] = [];
-    for (const f of faixas) {
-      const alvo = tipo === "faturamento" ? parseBRL(f.alvo) : Number(f.alvo);
-      const valor = f.recompensa === "bonus" ? parseBRL(f.valor) : parsePercentual(f.valor);
-      if (!alvo || alvo <= 0 || !valor || valor <= 0) return null;
-      convertidas.push({ id: f.id, alvo, recompensa: f.recompensa, valor });
-    }
-    return convertidas.sort((a, b) => a.alvo - b.alvo);
-  }
+  const setorEfetivo =
+    alvoDe === "pessoa"
+      ? ((pessoas.find((c) => c.id === colaboradorId)?.setor ?? null) as SetorPontuavel | null)
+      : setor;
+  const numero = valorDaMetrica(metrica, valor);
 
   async function salvar() {
     const e: Record<string, string> = {};
-    if (!colaboradorId) e.colaborador = "Escolha de quem é a meta.";
-    if (!nome.trim()) e.nome = "Dê um nome, como “Agendados da semana”.";
-    const convertidas = converter();
-    if (faixas.length === 0) e.faixas = "Crie pelo menos uma faixa.";
-    else if (!convertidas) e.faixas = "Preencha o alvo e a recompensa de todas as faixas.";
-    else if (new Set(convertidas.map((f) => f.alvo)).size !== convertidas.length) {
-      e.faixas = "Duas faixas não podem ter o mesmo alvo.";
-    }
+    if (!nome.trim()) e.nome = "Dê um nome à meta.";
+    if (alvoDe === "pessoa" && !colaboradorId) e.colaboradorId = "Escolha o colaborador.";
+    if (alvoDe === "setor" && !setor) e.setor = "Escolha o setor.";
+    if (numero === null) e.valor = "Informe o alvo da meta.";
+    if (vigenteAte && vigenteAte < vigenteDesde) e.vigenteAte = "O fim vem depois do começo.";
     setErros(e);
-    if (Object.keys(e).length > 0 || !convertidas) return;
+    if (Object.keys(e).length > 0 || numero === null) return;
 
     const salva = await salvarMeta({
       id: meta?.id,
-      colaboradorId,
       nome: nome.trim(),
-      tipo,
+      metrica,
+      alvo: numero,
       periodo,
-      faixas: convertidas,
+      setor: alvoDe === "setor" ? setor : null,
+      colaboradorId: alvoDe === "pessoa" ? colaboradorId : null,
+      vigenteDesde,
+      vigenteAte: vigenteAte || null,
       ativa,
     });
     if (!salva) return;
     toast.success(meta ? "Meta atualizada" : "Meta criada", {
-      description: `${salva.faixas.length} ${salva.faixas.length === 1 ? "faixa" : "faixas"}, a primeira em ${formatarAlvo(salva.tipo, salva.faixas[0].alvo)}.`,
+      description: `${salva.nome}: ${descreverCondicao(salva.metrica, operador, salva.alvo)}.`,
     });
     aoFechar();
   }
 
   return (
     <Modal open onOpenChange={(v) => !v && aoFechar()}>
-      <ModalConteudo larguraMaxima="max-w-xl">
+      <ModalConteudo larguraMaxima="max-w-lg">
         <ModalCabecalho
           titulo={meta ? "Editar meta" : "Nova meta"}
-          descricao="Vale a faixa mais alta alcançada no período, nunca a soma das faixas."
+          descricao="Vale a partir da vigência. Alterar a meta não recalcula janelas já fechadas."
         />
         <div className="flex flex-col gap-4">
-          {!colaboradorFixo && (
-            <Campo rotulo="Colaborador" obrigatorio erro={erros.colaborador}>
-              <Selecao value={colaboradorId} onValueChange={setColaboradorId}>
+          <Campo rotulo="Nome" obrigatorio erro={erros.nome}>
+            <Input
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              placeholder="Meta do dia"
+              autoFocus
+            />
+          </Campo>
+
+          <Campo rotulo="Para quem" erro={erros.colaboradorId ?? erros.setor}>
+            <div className="flex flex-col gap-3">
+              <Selecao
+                value={alvoDe === "setor" ? `setor:${setor ?? "vendas"}` : `pessoa:${colaboradorId}`}
+                onValueChange={(v) => {
+                  const [tipo, id] = v.split(":");
+                  if (tipo === "setor") {
+                    setAlvoDe("setor");
+                    setSetor(id as SetorPontuavel);
+                  } else {
+                    setAlvoDe("pessoa");
+                    setColaboradorId(id);
+                  }
+                }}
+              >
                 <SelecaoGatilho>
-                  <SelecaoValor placeholder="Escolha o colaborador" />
+                  <SelecaoValor placeholder="Escolha o alvo" />
                 </SelecaoGatilho>
                 <SelecaoConteudo>
-                  {elegiveis.map((c) => (
-                    <SelecaoItem key={c.id} value={c.id}>
+                  <SelecaoItem value="setor:vendas">Todos os vendedores</SelecaoItem>
+                  <SelecaoItem value="setor:financeiro">Todo o financeiro</SelecaoItem>
+                  {pessoas.map((c) => (
+                    <SelecaoItem key={c.id} value={`pessoa:${c.id}`}>
                       {c.nome}
                     </SelecaoItem>
                   ))}
                 </SelecaoConteudo>
               </Selecao>
-            </Campo>
-          )}
-
-          <Campo rotulo="Nome" obrigatorio erro={erros.nome}>
-            <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Agendados da semana" />
+            </div>
           </Campo>
 
+          <CampoCondicao
+            setor={setorEfetivo}
+            metrica={metrica}
+            operador={operador}
+            valor={valor}
+            erro={erros.valor}
+            somenteMetas
+            aoMudar={(d) => {
+              setMetrica(d.metrica);
+              setOperador(d.operador);
+              setValor(d.valor);
+            }}
+          />
+
+          <CampoPeriodo
+            valor={periodo}
+            aoMudar={setPeriodo}
+            ajuda="A janela em que a meta é conferida."
+          />
+
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <Label>Mede</Label>
-              <ControleSegmentado
-                tamanho="sm"
-                valor={tipo}
-                aoMudar={(v) => {
-                  setTipo(v);
-                  setFaixas((atual) => atual.map((f) => ({ ...f, alvo: "" })));
-                }}
-                opcoes={[
-                  { valor: "pedidos", rotulo: "Pedidos" },
-                  { valor: "faturamento", rotulo: "Faturamento" },
-                ]}
+            <Campo rotulo="Vale a partir de" obrigatorio>
+              <Input
+                type="date"
+                value={vigenteDesde}
+                onChange={(e) => setVigenteDesde(e.target.value || hoje())}
+                className="tabular"
               />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Período</Label>
-              <ControleSegmentado
-                tamanho="sm"
-                valor={periodo}
-                aoMudar={setPeriodo}
-                opcoes={(Object.keys(ROTULO_PERIODO_META) as PeriodoMeta[]).map((p) => ({
-                  valor: p,
-                  rotulo: ROTULO_PERIODO_META[p],
-                }))}
+            </Campo>
+            <Campo rotulo="Até" erro={erros.vigenteAte} ajuda="Vazio = sem fim.">
+              <Input
+                type="date"
+                value={vigenteAte}
+                onChange={(e) => setVigenteAte(e.target.value)}
+                className="tabular"
               />
-            </div>
-          </div>
-
-          {colaborador && (
-            <p className="flex items-start gap-2 rounded-[var(--radius-card-sm)] bg-surface-2 px-4 py-3 text-[13px] text-muted-fg">
-              <Icone nome="info" size={15} className="mt-0.5 shrink-0" />
-              <span>
-                Conta: <span className="text-fg">{baseDaMeta(colaborador, tipo).toLowerCase()}</span>.
-                A regra é fixa para o setor.
-              </span>
-            </p>
-          )}
-
-          <div className="flex flex-col gap-2">
-            <Label>Faixas</Label>
-            {faixas.map((faixa, i) => (
-              <div
-                key={faixa.id}
-                className="grid grid-cols-[1fr_auto] items-end gap-2 rounded-[var(--radius-card-sm)] border border-border p-3 sm:grid-cols-[1fr_auto_1fr_auto]"
-              >
-                <Campo rotulo={`${i + 1}ª faixa: alvo`}>
-                  <Input
-                    value={faixa.alvo}
-                    onChange={(e) =>
-                      mudarFaixa(faixa.id, {
-                        alvo: tipo === "pedidos" ? e.target.value.replace(/\D/g, "") : e.target.value,
-                      })
-                    }
-                    inputMode={tipo === "pedidos" ? "numeric" : "decimal"}
-                    placeholder={tipo === "pedidos" ? "10 pedidos" : "R$ 0,00"}
-                    className="tabular"
-                  />
-                </Campo>
-                <Botao
-                  type="button"
-                  variante="fantasma"
-                  tamanho="icone"
-                  className="sm:order-last"
-                  aria-label={`Remover ${i + 1}ª faixa`}
-                  onClick={() => setFaixas((atual) => atual.filter((f) => f.id !== faixa.id))}
-                >
-                  <Icone nome="excluir" size={15} />
-                </Botao>
-                <div className="flex flex-col gap-1.5">
-                  <Label>Recompensa</Label>
-                  <ControleSegmentado
-                    tamanho="sm"
-                    valor={faixa.recompensa}
-                    aoMudar={(v) => mudarFaixa(faixa.id, { recompensa: v, valor: "" })}
-                    opcoes={[
-                      { valor: "bonus", rotulo: "Bônus R$" },
-                      { valor: "percentual", rotulo: "+ %" },
-                    ]}
-                  />
-                </div>
-                <Campo rotulo={faixa.recompensa === "bonus" ? "Valor do bônus" : "Aumento da comissão"}>
-                  <Input
-                    value={faixa.valor}
-                    onChange={(e) => mudarFaixa(faixa.id, { valor: e.target.value })}
-                    inputMode="decimal"
-                    placeholder={faixa.recompensa === "bonus" ? "R$ 0,00" : "0,5 %"}
-                    className="tabular"
-                  />
-                </Campo>
-              </div>
-            ))}
-            {erros.faixas && <p className="text-xs text-[var(--st-vermelho-fg)]">{erros.faixas}</p>}
-            <Botao
-              type="button"
-              variante="contorno"
-              tamanho="sm"
-              className="self-start"
-              onClick={() => setFaixas((atual) => [...atual, novaFaixa()])}
-            >
-              <Icone nome="adicionar" size={14} />
-              Adicionar faixa
-            </Botao>
-            <p className="text-xs text-muted-fg">
-              “+ %” soma pontos percentuais à comissão sobre a base do período em que a faixa foi
-              batida. Exemplo: {descreverRecompensa({ id: "", alvo: 0, recompensa: "percentual", valor: 50 })}.
-            </p>
+            </Campo>
           </div>
 
           <CampoAtivo
             ativo={ativa}
             aoMudar={setAtiva}
             rotulo="Meta ativa"
-            descricao="Inativa, não gera bônus nem aparece no progresso."
+            descricao="Inativa, some da Minha área e deixa de liberar recompensa."
           />
         </div>
-        <ModalRodape className="sm:justify-between">
-          {meta ? (
-            <Botao
-              variante="perigo"
-              onClick={async () => {
-                if (!(await excluirMeta(meta.id))) return;
-                toast.success("Meta excluída", { description: `${meta.nome} não gera mais bônus.` });
-                aoFechar();
-              }}
-            >
+        <ModalRodape>
+          {meta && (
+            <Botao variante="fantasma" className="mr-auto" onClick={() => setExcluindo(true)}>
               <Icone nome="excluir" size={15} />
-              Excluir meta
+              Excluir
             </Botao>
-          ) : (
-            <span />
           )}
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Botao variante="secundaria" onClick={aoFechar}>
-              Cancelar
-            </Botao>
-            <Botao variante="principal" onClick={salvar}>
-              <Icone nome="check" size={15} />
-              {meta ? "Salvar meta" : "Criar meta"}
-            </Botao>
-          </div>
+          <Botao variante="secundaria" onClick={aoFechar}>
+            Cancelar
+          </Botao>
+          <Botao variante="principal" onClick={salvar}>
+            <Icone nome="check" size={15} />
+            {meta ? "Salvar meta" : "Criar meta"}
+          </Botao>
         </ModalRodape>
       </ModalConteudo>
+
+      <ModalConfirmacao
+        aberto={excluindo}
+        titulo="Excluir meta"
+        mensagem="O histórico de quem bateu continua; a meta deixa de ser conferida."
+        perigo
+        icone="excluir"
+        rotuloConfirmar="Excluir"
+        aoCancelar={() => setExcluindo(false)}
+        aoConfirmar={async () => {
+          if (meta && (await excluirMeta(meta.id))) {
+            toast.success("Meta excluída");
+            aoFechar();
+          }
+          setExcluindo(false);
+        }}
+      />
     </Modal>
   );
 }
